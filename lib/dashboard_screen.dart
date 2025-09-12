@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'setup_profile_personal_screen.dart';
 import 'sos_emergency_screen.dart';
-import 'trip_history_screen.dart'; // Add this import
+import 'trip_history_screen.dart';
+import 'journey_planner_screen.dart'; // Add this import
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -17,8 +18,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _selectedIndex = index;
     });
-    if (index == 3) {
-      // Setup Profile tab pressed
+    
+    // Handle navigation based on tab index
+    if (index == 1) { // Routes tab pressed
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
+      );
+    } else if (index == 2) { // Trip History tab pressed
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const TripHistoryScreen()),
+      );
+    } else if (index == 3) { // Setup Profile tab pressed
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const SetupProfilePersonalScreen()),
@@ -94,23 +106,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.settings_outlined,
-                      color: Colors.grey,
-                      size: 20,
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.route_outlined,
+                        color: Colors.grey,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ],
@@ -282,7 +302,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Colors.grey[100]!,
                             Icons.description_outlined,
                             () {
-                              // Navigate to Trip History screen instead of showing snackbar
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(builder: (context) => const TripHistoryScreen()),
@@ -294,12 +313,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const SizedBox(width: 16),
                         Expanded(
                           child: _buildQuickActionButton(
-                            'Wallet',
+                            'Journey Planner',
                             Colors.grey[100]!,
-                            Icons.account_balance_wallet_outlined,
+                            Icons.route_outlined,
                             () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Opening wallet...')),
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
                               );
                             },
                             isSecondary: true,
@@ -340,9 +360,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 8),
                     ElevatedButton(
                       onPressed: () {
-                        // Navigate to next screen (you can add your next screen here)
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Navigate to next screen')),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
                         );
                       },
                       style: ElevatedButton.styleFrom(
@@ -352,7 +372,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      child: const Text('Go to Next Screen'),
+                      child: const Text('Go to Journey Planner'),
                     ),
                   ],
                 ),

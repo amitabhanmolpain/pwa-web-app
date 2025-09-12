@@ -9,6 +9,7 @@ import 'setup_profile_vehicle_screen.dart';
 import 'setup_profile_documents_screen.dart';
 import 'sos_emergency_screen.dart';
 import 'trip_history_screen.dart';
+import 'journey_planner_screen.dart'; // Import the JourneyPlannerScreen
 
 void main() {
   runApp(const DriverPortalApp());
@@ -40,6 +41,7 @@ class DriverPortalApp extends StatelessWidget {
         '/setup_profile_documents': (context) => const SetupProfileDocumentsScreen(),
         '/sos_emergency': (context) => const SosEmergencyScreen(),
         '/trip_history': (context) => const TripHistoryScreen(),
+        '/journey_planner': (context) => const JourneyPlannerScreen(), // Add this route
       },
     );
   }
