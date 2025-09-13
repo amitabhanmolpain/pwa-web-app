@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'theme_notifier.dart';
 import 'setup_profile_personal_screen.dart';
 import 'sos_emergency_screen.dart';
 import 'trip_history_screen.dart';
 import 'journey_planner_screen.dart';
+import 'settings_screen.dart';
+import 'support_center_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
-
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
@@ -18,7 +21,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   late Animation<double> _scaleAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // Hover states for quick action buttons
   final Map<String, bool> _hoverStates = {
     'Start Trip': false,
     'Support': false,
@@ -30,7 +32,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   String _selectedQuickAction = '';
 
   final TextEditingController _searchController = TextEditingController();
-  List<String> _features = [
+  final List<String> _features = [
     'Start Trip',
     'Support',
     'Trip History',
@@ -41,67 +43,49 @@ class _DashboardScreenState extends State<DashboardScreen>
   List<String> _filteredFeatures = [];
 
   void _onTabTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-    
-    // Handle navigation based on tab index
-    if (index == 1) { // Routes tab pressed
+    setState(() => _selectedIndex = index);
+    if (index == 1) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
+        MaterialPageRoute(builder: (_) => const JourneyPlannerScreen()),
       );
-    } else if (index == 2) { // Trip History tab pressed
+    } else if (index == 2) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const TripHistoryScreen()),
+        MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
       );
-    } else if (index == 3) { // Setup Profile tab pressed
+    } else if (index == 3) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const SetupProfilePersonalScreen()),
+        MaterialPageRoute(builder: (_) => const SetupProfilePersonalScreen()),
       );
     }
   }
 
   void _setHoverState(String buttonName, bool isHovering) {
-    setState(() {
-      _hoverStates[buttonName] = isHovering;
-    });
+    setState(() => _hoverStates[buttonName] = isHovering);
   }
 
   @override
   void initState() {
     super.initState();
-    
-    // Initialize animation controller
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat(reverse: true);
-    
-    // Scale animation for floating particles
+    _animationController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 8))
+          ..repeat(reverse: true);
     _scaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 1.15), weight: 1),
-      TweenSequenceItem(tween: Tween<double>(begin: 1.15, end: 1.0), weight: 1),
-    ]).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeInOut,
-      ),
-    );
-    
-    // Slide animation for background elements
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.15), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.15, end: 1.0), weight: 1),
+    ]).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0),
       end: const Offset(0.05, 0.05),
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeInOut,
-      ),
-    );
-
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
     _searchController.addListener(_onSearchChanged);
     _filteredFeatures = [];
   }
@@ -115,42 +99,31 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   void _onSearchChanged() {
     setState(() {
-      String query = _searchController.text.toLowerCase();
-      _filteredFeatures = _features
-          .where((feature) => feature.toLowerCase().contains(query))
-          .toList();
+      final q = _searchController.text.toLowerCase();
+      _filteredFeatures =
+          _features.where((f) => f.toLowerCase().contains(q)).toList();
     });
   }
 
   void _onFeatureTap(String feature) {
     if (feature == 'Start Trip') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Starting trip...')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Starting trip...')));
     } else if (feature == 'Support') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Contacting support...')),
-      );
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const SupportCenterScreen()));
     } else if (feature == 'Trip History') {
       Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const TripHistoryScreen()),
-      );
+          context, MaterialPageRoute(builder: (_) => const TripHistoryScreen()));
     } else if (feature == 'Journey Planner') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
-      );
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const JourneyPlannerScreen()));
     } else if (feature == 'Setup Profile') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const SetupProfilePersonalScreen()),
-      );
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const SetupProfilePersonalScreen()));
     } else if (feature == 'SOS Emergency') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const SosEmergencyScreen()),
-      );
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const SosEmergencyScreen()));
     }
     _searchController.clear();
     _filteredFeatures = [];
@@ -158,35 +131,56 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);                                   // theme [9]
+    final isDark = context.watch<ThemeNotifier>().isDarkMode;          // listen Provider [9]
+    final cardColor = theme.cardColor;
+    final bgColor = theme.scaffoldBackgroundColor;
+    final onCard = theme.colorScheme.onSurface.withOpacity(0.7);
+
+    // Compute brand pill colors OUTSIDE children list to avoid errors. [1]
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color pillBg = dark
+        ? theme.colorScheme.surfaceVariant.withOpacity(0.35)
+        : theme.colorScheme.primary.withOpacity(0.18);
+    final Color pillBorder = dark
+        ? theme.colorScheme.onSurface.withOpacity(0.15)
+        : theme.colorScheme.primary.withOpacity(0.25);
+    final Color pillForeground =
+        dark ? theme.colorScheme.onSurface : theme.colorScheme.primary; // [10]
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: bgColor,
       body: Stack(
         children: [
-          // Animated background with subtle moving gradient
           AnimatedBuilder(
             animation: _animationController,
             builder: (context, child) {
+              final base = isDark
+                  ? [
+                      const Color(0xFF1F2330),
+                      const Color(0xFF1A1F2B),
+                      const Color(0xFF182026),
+                    ]
+                  : const [
+                      Color(0xFFE1F5FE),
+                      Color(0xFFF3E5F5),
+                      Color(0xFFE8F5E9),
+                    ];
               return Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: const [
-                      Color(0xFFE1F5FE),
-                      Color(0xFFF3E5F5),
-                      Color(0xFFE8F5E9),
-                    ],
+                    colors: base,
                     stops: [0.0, 0.5 + _animationController.value * 0.1, 1.0],
                   ),
                 ),
               );
             },
           ),
-          
-          // Animated floating particles
+
           ..._buildFloatingParticles(),
-          
-          // Content
+
           SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20.0),
@@ -197,43 +191,70 @@ class _DashboardScreenState extends State<DashboardScreen>
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6366F1),
-                          borderRadius: BorderRadius.circular(8),
+                          color: pillBg,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: pillBorder, width: 1),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              Icons.local_shipping,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                            SizedBox(width: 8),
+                            Icon(Icons.local_shipping,
+                                color: pillForeground, size: 20),
+                            const SizedBox(width: 8),
                             Text(
                               'DriverPortal',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: pillForeground,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ],
                         ),
                       ),
                       const Spacer(),
+                      Tooltip(
+                        message: isDark ? 'Switch to light' : 'Switch to dark',
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () =>
+                              context.read<ThemeNotifier>().toggleTheme(),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface,
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              isDark ? Icons.dark_mode : Icons.light_mode,
+                              color: theme.colorScheme.primary,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
                       GestureDetector(
                         onTap: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (context) => const SosEmergencyScreen()),
+                            MaterialPageRoute(
+                                builder: (_) => const SosEmergencyScreen()),
                           );
                         },
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: theme.colorScheme.surface,
                             borderRadius: BorderRadius.circular(8),
                             boxShadow: [
                               BoxShadow(
@@ -250,44 +271,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.route_outlined, // or use your custom icon
-                            color: Colors.grey,
-                            size: 20,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
 
                   const SizedBox(height: 24),
 
-                  // Search Bar with functionality
+                  // Search Bar
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: theme.colorScheme.surface,
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
@@ -299,15 +293,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.search,
-                          color: Colors.grey[400],
-                          size: 20,
-                        ),
+                        Icon(Icons.search, color: onCard, size: 20),
                         const SizedBox(width: 12),
                         Expanded(
                           child: TextField(
                             controller: _searchController,
+                            style: theme.textTheme.bodyMedium,
                             decoration: const InputDecoration(
                               hintText: 'Search routes, locations, features...',
                               border: InputBorder.none,
@@ -319,13 +310,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                   ),
 
-                  // Show filtered features as suggestions
                   if (_filteredFeatures.isNotEmpty)
                     Container(
                       margin: const EdgeInsets.only(top: 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: theme.colorScheme.surface,
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(
@@ -336,66 +327,132 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ],
                       ),
                       child: Column(
-                        children: _filteredFeatures.map((feature) {
-                          return ListTile(
-                            title: Text(feature),
-                            onTap: () => _onFeatureTap(feature),
-                          );
-                        }).toList(),
+                        children: _filteredFeatures
+                            .map((feature) => ListTile(
+                                  title: Text(feature,
+                                      style: theme.textTheme.bodyMedium),
+                                  onTap: () => _onFeatureTap(feature),
+                                ))
+                            .toList(),
                       ),
                     ),
 
                   const SizedBox(height: 24),
 
-                  // Ready for journey text
-                  const Text(
-                    'Ready for your next journey?',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                  // Active Route card
+                  Container(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: theme.colorScheme.primary.withOpacity(0.08),
+                        width: 1,
+                      ),
+                    ),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF22C55E),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Active Route',
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(color: theme.hintColor)),
+                                  const SizedBox(height: 2),
+                                  Text('Route 42',
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w700)),
+                                ],
+                              ),
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text('Next Stop',
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(color: theme.hintColor)),
+                                const SizedBox(height: 2),
+                                Text('Central Station',
+                                    style: theme.textTheme.bodyMedium
+                                        ?.copyWith(
+                                            fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Icon(Icons.place_outlined,
+                                size: 16,
+                                color: theme.hintColor.withOpacity(0.9)),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Current Location',
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(color: theme.hintColor)),
+                                  const SizedBox(height: 2),
+                                  Text('Main Street & 5th Avenue',
+                                      style: theme.textTheme.bodySmall,
+                                      overflow: TextOverflow.ellipsis),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-
                   const SizedBox(height: 20),
 
-                  // Stats Cards - First Row
                   Row(
                     children: [
                       Expanded(
-                        child: _buildStatCard(
-                          'Today\'s Hours',
-                          '6.5h',
-                          Colors.green,
-                          Icons.access_time,
-                        ),
+                        child: _buildStatCard('Today\'s Hours', '6.5h',
+                            Colors.green, Icons.access_time),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: _buildStatCard(
-                          'Distance',
-                          '245 km',
-                          const Color(0xFF6366F1),
-                          Icons.navigation_outlined,
-                        ),
+                        child: _buildStatCard('Distance', '245 km',
+                            theme.colorScheme.primary, Icons.navigation_outlined),
                       ),
                     ],
                   ),
 
                   const SizedBox(height: 16),
 
-                  // Stats Cards - Second Row (Earnings centered)
                   Row(
                     children: [
                       const Spacer(),
                       Expanded(
                         flex: 2,
-                        child: _buildStatCard(
-                          'Earnings',
-                          '₹1,850',
-                          Colors.purple,
-                          Icons.account_balance_wallet,
-                        ),
+                        child: _buildStatCard('Earnings', '₹1,850', Colors.purple,
+                            Icons.account_balance_wallet),
                       ),
                       const Spacer(),
                     ],
@@ -403,22 +460,16 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                   const SizedBox(height: 32),
 
-                  // Quick Actions Section
-                  const Text(
-                    'Quick Actions',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
+                  Text('Quick Actions',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
 
                   const SizedBox(height: 16),
 
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: cardColor,
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
@@ -435,14 +486,20 @@ class _DashboardScreenState extends State<DashboardScreen>
                             Expanded(
                               child: _buildQuickActionButton(
                                 'Start Trip',
-                                _hoverStates['Start Trip']! ? const Color(0xFF6366F1) : Colors.grey[100]!,
+                                _hoverStates['Start Trip']!
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.surface,
                                 Icons.navigation,
                                 () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Starting trip...')),
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const JourneyPlannerScreen()),
                                   );
                                 },
-                                onHover: (isHovering) => _setHoverState('Start Trip', isHovering),
+                                onHover: (h) =>
+                                    _setHoverState('Start Trip', h),
                                 isHovered: _hoverStates['Start Trip']!,
                               ),
                             ),
@@ -450,14 +507,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                             Expanded(
                               child: _buildQuickActionButton(
                                 'Support',
-                                _hoverStates['Support']! ? const Color(0xFF6366F1) : Colors.grey[100]!,
+                                _hoverStates['Support']!
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.surface,
                                 Icons.headset_mic_outlined,
                                 () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Contacting support...')),
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const SupportCenterScreen()),
                                   );
                                 },
-                                onHover: (isHovering) => _setHoverState('Support', isHovering),
+                                onHover: (h) => _setHoverState('Support', h),
                                 isHovered: _hoverStates['Support']!,
                               ),
                             ),
@@ -469,32 +531,43 @@ class _DashboardScreenState extends State<DashboardScreen>
                             Expanded(
                               child: _buildQuickActionButton(
                                 'Trip History',
-                                _hoverStates['Trip History']! ? const Color(0xFF6366F1) : Colors.grey[100]!,
+                                _hoverStates['Trip History']!
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.surface,
                                 Icons.description_outlined,
                                 () {
                                   Navigator.push(
                                     context,
-                                    MaterialPageRoute(builder: (context) => const TripHistoryScreen()),
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const TripHistoryScreen()),
                                   );
                                 },
-                                onHover: (isHovering) => _setHoverState('Trip History', isHovering),
+                                onHover: (h) =>
+                                    _setHoverState('Trip History', h),
                                 isHovered: _hoverStates['Trip History']!,
                               ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
                               child: _buildQuickActionButton(
-                                'Journey Planner',
-                                _hoverStates['Journey Planner']! ? const Color(0xFF6366F1) : Colors.grey[100]!,
-                                Icons.route_outlined,
+                                'Settings',
+                                _hoverStates['Journey Planner']!
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.surface,
+                                Icons.settings,
                                 () {
                                   Navigator.push(
                                     context,
-                                    MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const SettingsScreen()),
                                   );
                                 },
-                                onHover: (isHovering) => _setHoverState('Journey Planner', isHovering),
-                                isHovered: _hoverStates['Journey Planner']!,
+                                onHover: (h) =>
+                                    _setHoverState('Journey Planner', h),
+                                isHovered:
+                                    _hoverStates['Journey Planner']!,
                               ),
                             ),
                           ],
@@ -505,52 +578,38 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                   const SizedBox(height: 32),
 
-                  // Test Navigation Button
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.amber[100],
+                      color: Colors.amber.withOpacity(isDark ? 0.2 : 0.3),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.amber),
                     ),
                     child: Column(
                       children: [
-                        const Icon(
-                          Icons.bug_report,
-                          color: Colors.amber,
-                          size: 24,
-                        ),
+                        const Icon(Icons.bug_report,
+                            color: Colors.amber, size: 24),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Testing Mode',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
+                        Text('Testing Mode',
+                            style: theme.textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w600)),
                         const SizedBox(height: 8),
                         ElevatedButton(
                           onPressed: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
+                              MaterialPageRoute(
+                                  builder: (_) => const JourneyPlannerScreen()),
                             );
                           },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.amber,
-                            foregroundColor: Colors.black87,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
                           child: const Text('Go to Journey Planner'),
                         ),
                       ],
                     ),
                   ),
 
-                  const SizedBox(height: 100), // Space for bottom navigation
+                  const SizedBox(height: 100),
                 ],
               ),
             ),
@@ -559,7 +618,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.colorScheme.surface,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.05),
@@ -572,31 +631,27 @@ class _DashboardScreenState extends State<DashboardScreen>
           currentIndex: _selectedIndex,
           onTap: _onTabTapped,
           type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
-          selectedItemColor: const Color(0xFF6366F1),
-          unselectedItemColor: Colors.grey,
+          backgroundColor: theme.colorScheme.surface,
+          selectedItemColor: theme.colorScheme.primary,
+          unselectedItemColor: theme.hintColor,
           elevation: 0,
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Home',
-            ),
+                icon: Icon(Icons.home_outlined),
+                activeIcon: Icon(Icons.home),
+                label: 'Home'),
             BottomNavigationBarItem(
-              icon: Icon(Icons.route_outlined),
-              activeIcon: Icon(Icons.route),
-              label: 'Routes',
-            ),
+                icon: Icon(Icons.route_outlined),
+                activeIcon: Icon(Icons.route),
+                label: 'Routes'),
             BottomNavigationBarItem(
-              icon: Icon(Icons.history),
-              activeIcon: Icon(Icons.history),
-              label: 'Trip History',
-            ),
+                icon: Icon(Icons.history),
+                activeIcon: Icon(Icons.history),
+                label: 'Trip History'),
             BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Setup Profile',
-            ),
+                icon: Icon(Icons.settings_outlined),
+                activeIcon: Icon(Icons.settings),
+                label: 'Setup Profile'),
           ],
         ),
       ),
@@ -605,10 +660,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildFabMenu(BuildContext context) {
+    final theme = Theme.of(context);
     return Stack(
       alignment: Alignment.bottomRight,
       children: [
-        // SOS FAB
         if (_isFabExpanded)
           Padding(
             padding: const EdgeInsets.only(bottom: 120, right: 8),
@@ -618,14 +673,15 @@ class _DashboardScreenState extends State<DashboardScreen>
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const SosEmergencyScreen()),
+                  MaterialPageRoute(
+                      builder: (_) => const SosEmergencyScreen()),
                 );
                 setState(() => _isFabExpanded = false);
               },
-              child: const Icon(Icons.emergency_outlined, color: Colors.white),
+              child:
+                  const Icon(Icons.emergency_outlined, color: Colors.white),
             ),
           ),
-        // Location FAB (green, location icon)
         if (_isFabExpanded)
           Padding(
             padding: const EdgeInsets.only(bottom: 60, right: 8),
@@ -635,23 +691,24 @@ class _DashboardScreenState extends State<DashboardScreen>
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const JourneyPlannerScreen()),
+                  MaterialPageRoute(
+                      builder: (_) => const JourneyPlannerScreen()),
                 );
                 setState(() => _isFabExpanded = false);
               },
               child: const Icon(Icons.location_on, color: Colors.white),
             ),
           ),
-        // Main FAB (toggle)
         Padding(
           padding: const EdgeInsets.only(right: 8, bottom: 8),
           child: FloatingActionButton(
             heroTag: 'menu_fab',
-            backgroundColor: Colors.white,
+            backgroundColor: theme.colorScheme.surface,
             onPressed: () {
               setState(() => _isFabExpanded = !_isFabExpanded);
             },
-            child: const Icon(Icons.menu, color: Colors.blue, size: 32),
+            child:
+                Icon(Icons.menu, color: theme.colorScheme.primary, size: 32),
           ),
         ),
       ],
@@ -660,7 +717,6 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   List<Widget> _buildFloatingParticles() {
     return [
-      // Large animated circles
       Positioned(
         top: 50,
         right: -60,
@@ -682,17 +738,14 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
       ),
-      
       Positioned(
         bottom: 150,
         left: -70,
         child: ScaleTransition(
-          scale: Tween<double>(begin: 1.0, end: 1.15).animate(
-            CurvedAnimation(
-              parent: _animationController,
-              curve: const Interval(0.0, 0.5, curve: Curves.easeInOut),
-            ),
-          ),
+          scale: Tween<double>(begin: 1.0, end: 1.15).animate(CurvedAnimation(
+            parent: _animationController,
+            curve: const Interval(0.0, 0.5, curve: Curves.easeInOut),
+          )),
           child: Container(
             width: 160,
             height: 160,
@@ -709,8 +762,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
       ),
-      
-      // Small floating particles
       Positioned(
         top: 120,
         left: 30,
@@ -718,8 +769,8 @@ class _DashboardScreenState extends State<DashboardScreen>
           position: _slideAnimation,
           child: ScaleTransition(
             scale: TweenSequence<double>([
-              TweenSequenceItem(tween: Tween<double>(begin: 0.8, end: 1.0), weight: 1),
-              TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 0.8), weight: 1),
+              TweenSequenceItem(tween: Tween(begin: 0.8, end: 1.0), weight: 1),
+              TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.8), weight: 1),
             ]).animate(_animationController),
             child: Container(
               width: 40,
@@ -732,19 +783,17 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
       ),
-      
       Positioned(
         bottom: 200,
         right: 40,
         child: SlideTransition(
           position: Tween<Offset>(
-            begin: const Offset(0, 0),
-            end: const Offset(-0.05, -0.05),
-          ).animate(_animationController),
+                  begin: const Offset(0, 0), end: const Offset(-0.05, -0.05))
+              .animate(_animationController),
           child: ScaleTransition(
             scale: TweenSequence<double>([
-              TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 1.2), weight: 1),
-              TweenSequenceItem(tween: Tween<double>(begin: 1.2, end: 1.0), weight: 1),
+              TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.2), weight: 1),
+              TweenSequenceItem(tween: Tween(begin: 1.2, end: 1.0), weight: 1),
             ]).animate(_animationController),
             child: Container(
               width: 30,
@@ -757,19 +806,17 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
       ),
-      
       Positioned(
         top: 250,
         right: 80,
         child: SlideTransition(
           position: Tween<Offset>(
-            begin: const Offset(0, 0),
-            end: const Offset(0.05, 0.05),
-          ).animate(_animationController),
+                  begin: const Offset(0, 0), end: const Offset(0.05, 0.05))
+              .animate(_animationController),
           child: ScaleTransition(
             scale: TweenSequence<double>([
-              TweenSequenceItem(tween: Tween<double>(begin: 1.2, end: 0.9), weight: 1),
-              TweenSequenceItem(tween: Tween<double>(begin: 0.9, end: 1.2), weight: 1),
+              TweenSequenceItem(tween: Tween(begin: 1.2, end: 0.9), weight: 1),
+              TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.2), weight: 1),
             ]).animate(_animationController),
             child: Container(
               width: 25,
@@ -785,11 +832,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     ];
   }
 
-  Widget _buildStatCard(String title, String value, Color color, IconData icon) {
+  Widget _buildStatCard(
+      String title, String value, Color color, IconData icon) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -802,40 +851,24 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  icon,
-                  color: color,
-                  size: 16,
-                ),
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
               ),
-            ],
-          ),
+              child: Icon(icon, color: color, size: 16),
+            ),
+          ]),
           const SizedBox(height: 12),
-          Text(
-            title,
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          Text(title,
+              style:
+                  theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.black87,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(value,
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -850,6 +883,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     bool isHovered = false,
   }) {
     final bool isSelected = _selectedQuickAction == title;
+    final theme = Theme.of(context);
     return MouseRegion(
       onEnter: (_) => onHover?.call(true),
       onExit: (_) => onHover?.call(false),
@@ -862,26 +896,26 @@ class _DashboardScreenState extends State<DashboardScreen>
           borderRadius: BorderRadius.circular(12),
           child: InkWell(
             onTap: () {
-              setState(() {
-                _selectedQuickAction = title;
-              });
+              setState(() => _selectedQuickAction = title);
               onTap();
             },
             borderRadius: BorderRadius.circular(12),
-            splashColor: const Color(0xFF6366F1).withOpacity(0.2),
+            splashColor: theme.colorScheme.primary.withOpacity(0.2),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOut,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? const Color(0xFF6366F1)
-                    : (isHovered ? const Color(0xFF6366F1) : backgroundColor),
+                    ? theme.colorScheme.primary
+                    : (isHovered
+                        ? theme.colorScheme.primary
+                        : backgroundColor),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
                     color: (isSelected || isHovered)
-                        ? const Color(0xFF6366F1).withOpacity(0.3)
+                        ? theme.colorScheme.primary.withOpacity(0.3)
                         : Colors.black.withOpacity(0.05),
                     blurRadius: (isSelected || isHovered) ? 18 : 10,
                     offset: const Offset(0, 4),
@@ -892,16 +926,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                 children: [
                   Icon(
                     icon,
-                    color: (isSelected || isHovered) ? Colors.white : Colors.grey[600],
+                    color: (isSelected || isHovered)
+                        ? Colors.white
+                        : theme.iconTheme.color,
                     size: 28,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     title,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: (isSelected || isHovered) ? Colors.white : Colors.grey[700],
-                      fontSize: 15,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: (isSelected || isHovered)
+                          ? Colors.white
+                          : theme.textTheme.labelLarge?.color,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
