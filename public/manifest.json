@@ -1,7 +1,7 @@
 {
   "name": "Punjab Bus Tracker",
-  "short_name": "BusTracker",
-  "description": "Real-time bus tracking for Punjab passengers",
+  "short_name": "MargDarshak",
+  "description": "Real-time bus tracking for Punjab passengers and all over India",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
