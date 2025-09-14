@@ -38,45 +38,98 @@ export function SignupForm() {
     }
 
     try {
-      // Simulate API call - replace with actual authentication
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      // For demo purposes, accept any valid input
-      if (name && email && phone && password) {
-        // Store user session with additional data
-        localStorage.setItem(
-          "user",
-          JSON.stringify({
-            name,
-            email,
-            phone,
-            isAuthenticated: true,
-            needsLanguageSelection: true,
-          }),
-        )
-        router.push("/language-selection")
-      } else {
+      if (!name || !email || !phone || !password) {
         setError("Please fill in all fields")
+        return
       }
+
+      // Call the register API endpoint
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, email, phone, password }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        // Handle different error types based on status code
+        if (response.status === 409) {
+          setError("This email is already registered")
+        } else if (response.status === 400) {
+          setError(data.error || "Please check your input")
+        } else {
+          setError("Registration failed. Please try again.")
+        }
+        return
+      }
+
+      // For backwards compatibility during transition
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          name,
+          email,
+          phone,
+          isAuthenticated: true,
+          needsLanguageSelection: true,
+        }),
+      )
+      
+      router.push("/language-selection")
     } catch (err) {
-      setError("Signup failed. Please try again.")
+      console.error("Registration error:", err)
+      setError("Registration failed. Please check your connection and try again.")
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleGoogleSignup = () => {
-    // Simulate Google signup
-    localStorage.setItem(
-      "user",
-      JSON.stringify({
-        name: "Google User",
-        email: "user@gmail.com",
-        isAuthenticated: true,
-        needsLanguageSelection: true,
-      }),
-    )
-    router.push("/language-selection")
+  const handleGoogleSignup = async () => {
+    setIsLoading(true)
+    setError("")
+    
+    try {
+      // In a real implementation, this would redirect to Google OAuth
+      // and then handle the callback with a server route.
+      // For now, we're making a simulated API call.
+      
+      // Simulate API call for now
+      const response = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          // In real OAuth, these would come from Google's response
+          provider: 'google'
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Google signup failed')
+      }
+
+      // For backwards compatibility during transition
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          name: "Google User",
+          email: "user@gmail.com",
+          isAuthenticated: true,
+          needsLanguageSelection: true,
+        }),
+      )
+      
+      router.push("/language-selection")
+    } catch (err) {
+      console.error("Google signup error:", err)
+      setError("Google signup failed. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (

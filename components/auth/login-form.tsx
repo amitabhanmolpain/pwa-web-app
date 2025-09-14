@@ -23,28 +23,97 @@ export function LoginForm() {
     setError("")
 
     try {
-      // Simulate API call - replace with actual authentication
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      // For demo purposes, accept any email/password
-      if (email && password) {
-        // Store user session (in real app, use proper auth)
-        localStorage.setItem("user", JSON.stringify({ email, isAuthenticated: true }))
-        router.push("/dashboard")
-      } else {
+      if (!email || !password) {
         setError("Please enter both email and password")
+        return
       }
+
+      // Call the login API endpoint
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        // Handle different error types based on status code
+        if (response.status === 401) {
+          setError("Invalid email or password")
+        } else if (response.status === 400) {
+          setError(data.error || "Please check your input")
+        } else {
+          setError("Login failed. Please try again.")
+        }
+        return
+      }
+
+      // API will set HTTP-only cookie for us
+      // For backwards compatibility during transition, also store in localStorage
+      localStorage.setItem("user", JSON.stringify({ 
+        email, 
+        isAuthenticated: true 
+      }))
+
+      // Redirect to dashboard on successful login
+      router.push("/dashboard")
     } catch (err) {
-      setError("Login failed. Please try again.")
+      console.error("Login error:", err)
+      setError("Login failed. Please check your connection and try again.")
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleGoogleLogin = () => {
-    // Simulate Google login
-    localStorage.setItem("user", JSON.stringify({ email: "user@gmail.com", isAuthenticated: true }))
-    router.push("/dashboard")
+  const handleGoogleLogin = async () => {
+    setIsLoading(true)
+    setError("")
+    
+    try {
+      // In a real implementation, this would redirect to Google OAuth
+      // and then handle the callback with a server route.
+      // For now, we're making a simulated API call.
+      
+      // This is a placeholder for OAuth flow:
+      // 1. In production: redirect to /api/auth/google
+      // 2. That endpoint redirects to Google OAuth
+      // 3. Google redirects back to our callback URL
+      // 4. Server validates and sets session
+      
+      // Simulate API call for now
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          provider: 'google',
+          // In real OAuth, these would come from Google's response
+          email: 'user@gmail.com',
+          name: 'Google User' 
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Google authentication failed')
+      }
+
+      // For backwards compatibility during transition
+      localStorage.setItem("user", JSON.stringify({ 
+        email: "user@gmail.com", 
+        isAuthenticated: true 
+      }))
+      
+      router.push("/dashboard")
+    } catch (err) {
+      console.error("Google login error:", err)
+      setError("Google login failed. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (

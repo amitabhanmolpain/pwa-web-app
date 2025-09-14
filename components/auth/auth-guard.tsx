@@ -15,21 +15,48 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter()
 
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       try {
-        const user = localStorage.getItem("user")
+        // First attempt to validate via API (session cookie)
+        const response = await fetch('/api/auth/validate', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        const data = await response.json();
+        
+        if (response.ok && data.valid) {
+          setIsAuthenticated(true);
+          return;
+        }
+        
+        // Fallback to localStorage during transition to API auth
+        const user = localStorage.getItem("user");
         if (user) {
-          const userData = JSON.parse(user)
-          setIsAuthenticated(userData.isAuthenticated || false)
+          const userData = JSON.parse(user);
+          setIsAuthenticated(userData.isAuthenticated || false);
         } else {
-          setIsAuthenticated(false)
+          setIsAuthenticated(false);
         }
       } catch {
-        setIsAuthenticated(false)
+        // If API fails, fallback to localStorage
+        try {
+          const user = localStorage.getItem("user");
+          if (user) {
+            const userData = JSON.parse(user);
+            setIsAuthenticated(userData.isAuthenticated || false);
+          } else {
+            setIsAuthenticated(false);
+          }
+        } catch {
+          setIsAuthenticated(false);
+        }
       }
-    }
+    };
 
-    checkAuth()
+    checkAuth();
   }, [])
 
   useEffect(() => {
