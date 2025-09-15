@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { submitDateRequest, getCalendarData, getDaySchedule, getWeekSchedule } from "@/lib/api/schedule"
+import type { BusType, Schedule, CalendarDay } from "@/types/schedule"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -272,7 +274,7 @@ export function ScheduleCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [viewMode, setViewMode] = useState<"day" | "week">("day")
-  const [selectedBusType, setSelectedBusType] = useState<string>("all")
+  const [selectedBusType, setSelectedBusType] = useState<BusType | "all">("all")
   const [showRequestDialog, setShowRequestDialog] = useState(false)
   const [requestData, setRequestData] = useState({
     from: "",
@@ -281,6 +283,79 @@ export function ScheduleCalendar() {
     time: "",
     busType: "",
   })
+  const [calendarData, setCalendarData] = useState<CalendarDay[]>([])
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(false)
+  const [calendarError, setCalendarError] = useState<string | null>(null)
+  const [daySchedules, setDaySchedules] = useState<Schedule[]>([])
+  const [weekSchedules, setWeekSchedules] = useState<Record<string, Schedule[]>>({})
+  const [isLoadingSchedules, setIsLoadingSchedules] = useState(false)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
+
+  const fetchCalendarData = async () => {
+    try {
+      setIsLoadingCalendar(true)
+      setCalendarError(null)
+      const data = await getCalendarData(
+        currentDate.getMonth() + 1,
+        currentDate.getFullYear(),
+        selectedBusType === 'all' ? undefined : selectedBusType
+      )
+      setCalendarData(data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch calendar data'
+      setCalendarError(message)
+    } finally {
+      setIsLoadingCalendar(false)
+    }
+  }
+
+  // Fetch calendar data when month or bus type changes
+  useEffect(() => {
+    fetchCalendarData()
+  }, [currentDate.getMonth(), currentDate.getFullYear(), selectedBusType])
+
+  const fetchDaySchedule = async (date: Date) => {
+    try {
+      setIsLoadingSchedules(true)
+      setScheduleError(null)
+      const data = await getDaySchedule(
+        date.toISOString().split('T')[0],
+        selectedBusType === 'all' ? undefined : selectedBusType
+      )
+      setDaySchedules(data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch day schedule'
+      setScheduleError(message)
+    } finally {
+      setIsLoadingSchedules(false)
+    }
+  }
+
+  const fetchWeekSchedule = async (date: Date) => {
+    try {
+      setIsLoadingSchedules(true)
+      setScheduleError(null)
+      const data = await getWeekSchedule(
+        date.toISOString().split('T')[0],
+        selectedBusType === 'all' ? undefined : selectedBusType
+      )
+      setWeekSchedules(data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch week schedule'
+      setScheduleError(message)
+    } finally {
+      setIsLoadingSchedules(false)
+    }
+  }
+
+  // Fetch schedule data when date, view mode, or bus type changes
+  useEffect(() => {
+    if (viewMode === 'day') {
+      fetchDaySchedule(selectedDate)
+    } else {
+      fetchWeekSchedule(selectedDate)
+    }
+  }, [selectedDate, viewMode, selectedBusType])
 
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
@@ -323,7 +398,7 @@ export function ScheduleCalendar() {
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
       const dateKey = formatDateKey(date)
-      const hasSchedule = busScheduleData[dateKey]
+      const calendarDay = calendarData.find(d => d.date === dateKey)
       const isSelected = date.toDateString() === selectedDate.toDateString()
       const isToday = date.toDateString() === new Date().toDateString()
 
@@ -340,7 +415,7 @@ export function ScheduleCalendar() {
           }`}
         >
           {day}
-          {hasSchedule && (
+          {calendarDay?.hasSchedule && (
             <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-orange-500 rounded-full"></div>
           )}
         </button>,
@@ -352,31 +427,16 @@ export function ScheduleCalendar() {
 
   const getFilteredSchedules = () => {
     if (viewMode === "day") {
-      const dayName = fullDaysOfWeek[selectedDate.getDay()]
-      const daySchedules = busScheduleData[dayName] || []
-
       if (selectedBusType === "all") {
         return daySchedules
       }
       return daySchedules.filter((schedule) => schedule.type === selectedBusType)
     } else {
-      // Week view - return all days with schedules
-      const weekSchedules = {}
-      fullDaysOfWeek.forEach((day) => {
-        const daySchedules = busScheduleData[day] || []
-        if (selectedBusType === "all") {
-          weekSchedules[day] = daySchedules
-        } else {
-          weekSchedules[day] = daySchedules.filter((schedule) => schedule.type === selectedBusType)
-        }
-      })
       return weekSchedules
     }
   }
 
   const renderDaySchedule = () => {
-    const schedules = getFilteredSchedules()
-
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -389,80 +449,118 @@ export function ScheduleCalendar() {
           })}
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {timeSlots.map((time) => {
-            const busesAtTime = schedules.filter((schedule) => schedule.time.startsWith(time.substring(0, 2)))
+        {isLoadingSchedules ? (
+          <div className="flex justify-center items-center h-40">
+            <div className="h-8 w-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : scheduleError ? (
+          <div className="text-red-600 text-center p-4">{scheduleError}</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {timeSlots.map((time) => {
+              const busesAtTime = daySchedules.filter((schedule: Schedule) => 
+                schedule.time.startsWith(time.substring(0, 2))
+              )
 
-            return (
-              <div key={time} className="border border-gray-200 rounded-lg p-3">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Clock className="w-4 h-4 text-orange-500" />
-                  <span className="font-medium text-gray-900">{time}</span>
-                </div>
-
-                {busesAtTime.length > 0 ? (
-                  <div className="space-y-2">
-                    {busesAtTime.map((bus, index) => (
-                      <div key={index} className="bg-orange-50 p-2 rounded text-sm">
-                        <div className="font-medium text-orange-600">{bus.route}</div>
-                        <div className="text-gray-600 text-xs">{bus.destination}</div>
-                        <div className="text-gray-500 text-xs">{bus.frequency}</div>
-                      </div>
-                    ))}
+              return (
+                <div key={time} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Clock className="w-4 h-4 text-orange-500" />
+                    <span className="font-medium text-gray-900">{time}</span>
                   </div>
-                ) : (
-                  <div className="text-gray-400 text-sm">No buses</div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+
+                  {busesAtTime.length > 0 ? (
+                    <div className="space-y-2">
+                      {busesAtTime.map((bus: Schedule, index: number) => (
+                        <div key={index} className="bg-orange-50 p-2 rounded text-sm">
+                          <div className="font-medium text-orange-600">{bus.route}</div>
+                          <div className="text-gray-600 text-xs">{bus.destination}</div>
+                          <div className="text-gray-500 text-xs">{bus.frequency}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-gray-400 text-sm">No buses</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     )
   }
 
   const renderWeekSchedule = () => {
-    const weekSchedules = getFilteredSchedules()
-
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Weekly Schedule</h3>
 
-        <div className="space-y-6">
-          {fullDaysOfWeek.map((day) => (
-            <div key={day} className="border border-gray-200 rounded-lg p-4">
-              <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
-                <CalendarDays className="w-4 h-4 text-orange-500 mr-2" />
-                {day}
-              </h4>
+        {isLoadingSchedules ? (
+          <div className="flex justify-center items-center h-40">
+            <div className="h-8 w-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : scheduleError ? (
+          <div className="text-red-600 text-center p-4">{scheduleError}</div>
+        ) : (
+          <div className="space-y-6">
+            {fullDaysOfWeek.map((day) => (
+              <div key={day} className="border border-gray-200 rounded-lg p-4">
+                <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
+                  <CalendarDays className="w-4 h-4 text-orange-500 mr-2" />
+                  {day}
+                </h4>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {weekSchedules[day]?.map((bus, index) => (
-                  <div key={index} className="bg-gray-50 p-3 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="bg-orange-500 text-white px-2 py-1 rounded text-xs font-medium">
-                        {bus.route}
-                      </span>
-                      <span className="text-sm font-medium text-gray-900">{bus.time}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {(weekSchedules as Record<string, Schedule[]>)[day]?.map((bus: Schedule, index: number) => (
+                    <div key={index} className="bg-gray-50 p-3 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="bg-orange-500 text-white px-2 py-1 rounded text-xs font-medium">
+                          {bus.route}
+                        </span>
+                        <span className="text-sm font-medium text-gray-900">{bus.time}</span>
+                      </div>
+                      <div className="text-sm text-gray-600 mb-1">{bus.destination}</div>
+                      <div className="text-xs text-gray-500">{bus.frequency}</div>
+                      <div className="text-xs text-orange-600 capitalize mt-1">{bus.type}</div>
                     </div>
-                    <div className="text-sm text-gray-600 mb-1">{bus.destination}</div>
-                    <div className="text-xs text-gray-500">{bus.frequency}</div>
-                    <div className="text-xs text-orange-600 capitalize mt-1">{bus.type}</div>
-                  </div>
-                )) || <div className="text-gray-400 text-sm col-span-full">No buses scheduled</div>}
+                  )) || <div className="text-gray-400 text-sm col-span-full">No buses scheduled</div>}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
 
-  const handleRequestSubmit = () => {
-    console.log("[v0] Date request submitted:", requestData)
-    setShowRequestDialog(false)
-    setRequestData({ from: "", to: "", date: "", time: "", busType: "" })
-    alert("Your request has been submitted! You will be notified once we review it.")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  const handleRequestSubmit = async () => {
+    try {
+      setIsSubmitting(true)
+      setSubmitError(null)
+      
+      const response = await submitDateRequest({
+        from: requestData.from,
+        to: requestData.to,
+        date: requestData.date,
+        time: requestData.time,
+        busType: requestData.busType as BusType
+      })
+
+      if (response.success) {
+        setShowRequestDialog(false)
+        setRequestData({ from: "", to: "", date: "", time: "", busType: "" })
+        // Show success toast or message
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to submit request'
+      setSubmitError(message)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -545,13 +643,27 @@ export function ScheduleCalendar() {
                 </Select>
               </div>
 
+              {submitError && (
+                <div className="text-sm text-red-600 mb-2">
+                  {submitError}
+                </div>
+              )}
               <Button
                 onClick={handleRequestSubmit}
                 className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-                disabled={!requestData.from || !requestData.to || !requestData.date || !requestData.busType}
+                disabled={!requestData.from || !requestData.to || !requestData.date || !requestData.busType || isSubmitting}
               >
-                <Send className="w-4 h-4 mr-2" />
-                Submit Request
+                {isSubmitting ? (
+                  <>
+                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Submit Request
+                  </>
+                )}
               </Button>
             </div>
           </DialogContent>
@@ -582,7 +694,10 @@ export function ScheduleCalendar() {
 
         <div className="flex items-center space-x-2">
           <Filter className="w-4 h-4 text-gray-500" />
-          <Select value={selectedBusType} onValueChange={(e) => setSelectedBusType(e)}>
+          <Select 
+            value={selectedBusType} 
+            onValueChange={(value: BusType | "all") => setSelectedBusType(value)}
+          >
             <SelectTrigger className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
               <SelectValue placeholder="Select bus type" />
             </SelectTrigger>
@@ -623,7 +738,15 @@ export function ScheduleCalendar() {
           </div>
 
           {/* Calendar grid */}
-          <div className="grid grid-cols-7 gap-1 mb-6">{renderCalendarDays()}</div>
+          {isLoadingCalendar ? (
+            <div className="flex justify-center items-center h-40">
+              <div className="h-8 w-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          ) : calendarError ? (
+            <div className="text-red-600 text-center p-4">{calendarError}</div>
+          ) : (
+            <div className="grid grid-cols-7 gap-1 mb-6">{renderCalendarDays()}</div>
+          )}
         </div>
       )}
 
