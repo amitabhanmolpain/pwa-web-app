@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-
-// TODO: Import necessary packages for API calls (http, dio, etc.)
-// import 'package:http/http.dart' as http;
-// import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TripHistoryScreen extends StatefulWidget {
   const TripHistoryScreen({super.key});
@@ -17,15 +16,21 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   
-  // TODO: Add variables for storing API data
-  // List<Trip> _trips = [];
-  // MonthlyStats _monthlyStats = MonthlyStats();
+  // API endpoints
+  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
+  static const String TRIPS_ENDPOINT = '$BASE_URL/trips';
+  static const String MONTHLY_STATS_ENDPOINT = '$BASE_URL/trips/stats/monthly';
+  static const String TRIP_DETAILS_ENDPOINT = '$BASE_URL/trips';
+
+  // Trip data
+  List<Trip> _trips = [];
+  MonthlyStats _monthlyStats = MonthlyStats();
 
   final List<Map<String, dynamic>> _filters = [
-    {'label': 'All Trips', 'icon': Icons.all_inclusive, 'count': 28},
-    {'label': 'Today', 'icon': Icons.today, 'count': 3},
-    {'label': 'This Week', 'icon': Icons.calendar_view_week, 'count': 12},
-    {'label': 'This Month', 'icon': Icons.calendar_today, 'count': 28}
+    {'label': 'All Trips', 'value': 'all'},
+    {'label': 'Today', 'value': 'today'},
+    {'label': 'This Week', 'value': 'week'},
+    {'label': 'This Month', 'value': 'month'}
   ];
 
   @override
@@ -48,7 +53,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
     // Start animation
     _animationController.forward();
     
-    // TODO: Call API to fetch initial trip data
+    // Call API to fetch initial trip data
     _fetchTripData();
   }
 
@@ -58,65 +63,177 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
     super.dispose();
   }
 
-  // TODO: Implement API call to fetch trip data
+  // API call to fetch trip data
   Future<void> _fetchTripData() async {
     setState(() {
       _isLoading = true;
     });
     
     try {
-      // Example API call structure:
-      // final response = await http.get(
-      //   Uri.parse('https://your-api.com/trips?filter=$_selectedFilter'),
-      //   headers: {'Authorization': 'Bearer your_token'},
-      // );
-      // 
-      // if (response.statusCode == 200) {
-      //   final data = json.decode(response.body);
-      //   setState(() {
-      //     _trips = data['trips'].map((trip) => Trip.fromJson(trip)).toList();
-      //     _monthlyStats = MonthlyStats.fromJson(data['monthlyStats']);
-      //     _isLoading = false;
-      //   });
-      // } else {
-      //   throw Exception('Failed to load trips');
-      // }
+      final prefs = await SharedPreferences.getInstance();
+      final accessToken = prefs.getString('access_token');
       
-      // Simulating API delay
-      await Future.delayed(const Duration(seconds: 1));
-      
-      setState(() {
-        _isLoading = false;
-      });
+      if (accessToken == null) {
+        throw Exception('Not authenticated. Please login again.');
+      }
+
+      // Fetch monthly stats
+      final statsResponse = await http.get(
+        Uri.parse(MONTHLY_STATS_ENDPOINT),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+        },
+      );
+
+      if (statsResponse.statusCode == 200) {
+        final statsData = json.decode(statsResponse.body);
+        setState(() {
+          _monthlyStats = MonthlyStats.fromJson(statsData);
+        });
+      } else if (statsResponse.statusCode == 401) {
+        final newToken = await _refreshToken();
+        if (newToken != null) {
+          await _fetchTripData();
+          return;
+        }
+      }
+
+      // Fetch trips with filter
+      final filterParam = _filters.firstWhere(
+        (f) => f['label'] == _selectedFilter,
+        orElse: () => _filters[0],
+      )['value'];
+
+      final tripsResponse = await http.get(
+        Uri.parse('$TRIPS_ENDPOINT?filter=$filterParam'),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+        },
+      );
+
+      if (tripsResponse.statusCode == 200) {
+        final tripsData = json.decode(tripsResponse.body);
+        setState(() {
+          _trips = (tripsData['trips'] as List)
+              .map((trip) => Trip.fromJson(trip))
+              .toList();
+          _isLoading = false;
+        });
+      } else if (tripsResponse.statusCode == 401) {
+        final newToken = await _refreshToken();
+        if (newToken != null) {
+          await _fetchTripData();
+          return;
+        }
+      } else {
+        throw Exception('Failed to load trips: ${tripsResponse.statusCode}');
+      }
+
     } catch (error) {
       setState(() {
         _isLoading = false;
       });
-      // TODO: Handle error (show snackbar or dialog)
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading trips: $error')),
+        SnackBar(
+          content: Text('Error loading trips: $error'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
-  // TODO: Implement API call for viewing trip details
+  // API call for viewing trip details
   Future<void> _viewTripDetails(String tripId) async {
-    // Example:
-    // final response = await http.get(
-    //   Uri.parse('https://your-api.com/trips/$tripId'),
-    //   headers: {'Authorization': 'Bearer your_token'},
-    // );
-    // 
-    // if (response.statusCode == 200) {
-    //   final tripDetails = json.decode(response.body);
-    //   // Navigate to trip details screen or show dialog
-    // } else {
-    //   throw Exception('Failed to load trip details');
-    // }
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('View details for trip $tripId')),
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final accessToken = prefs.getString('access_token');
+      
+      final response = await http.get(
+        Uri.parse('$TRIP_DETAILS_ENDPOINT/$tripId'),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final tripDetails = json.decode(response.body);
+        // Show trip details dialog or navigate to details screen
+        _showTripDetailsDialog(tripDetails);
+      } else if (response.statusCode == 401) {
+        final newToken = await _refreshToken();
+        if (newToken != null) {
+          await _viewTripDetails(tripId);
+          return;
+        }
+      } else {
+        throw Exception('Failed to load trip details');
+      }
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading trip details: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showTripDetailsDialog(Map<String, dynamic> tripDetails) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Trip Details'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Route: ${tripDetails['route'] ?? 'N/A'}'),
+                Text('Date: ${tripDetails['date'] ?? 'N/A'}'),
+                Text('Distance: ${tripDetails['distance'] ?? 'N/A'}'),
+                Text('Duration: ${tripDetails['duration'] ?? 'N/A'}'),
+                Text('Status: ${tripDetails['status'] ?? 'N/A'}'),
+                Text('Vehicle: ${tripDetails['vehicle'] ?? 'N/A'}'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
+  }
+
+  // Refresh JWT token
+  Future<String?> _refreshToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final refreshToken = prefs.getString('refresh_token');
+      
+      if (refreshToken == null) return null;
+
+      final response = await http.post(
+        Uri.parse('$BASE_URL/auth/refresh'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $refreshToken',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        final newAccessToken = responseData['accessToken'];
+        await prefs.setString('access_token', newAccessToken);
+        return newAccessToken;
+      }
+    } catch (e) {
+      print('Token refresh failed: $e');
+    }
+    return null;
   }
 
   @override
@@ -166,7 +283,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
                     ),
                     const SizedBox(height: 20),
 
-                    // Animated Stats Cards
+                    // Animated Stats Cards (Removed Passengers and Revenue)
                     GridView.count(
                       crossAxisCount: 2,
                       shrinkWrap: true,
@@ -175,10 +292,8 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
                       crossAxisSpacing: 16,
                       childAspectRatio: 1.2,
                       children: [
-                        _buildAnimatedStatCard(0, '28', 'Total Trips', Icons.directions_bus_filled, Colors.blue),
-                        _buildAnimatedStatCard(1, '894.5 km', 'Distance', Icons.navigation_rounded, Colors.green),
-                        _buildAnimatedStatCard(2, '₹82,485', 'Revenue', Icons.account_balance_wallet_rounded, Colors.orange),
-                        _buildAnimatedStatCard(3, '1247', 'Passengers', Icons.people_alt_rounded, Colors.purple),
+                        _buildAnimatedStatCard(0, _monthlyStats.totalTrips.toString(), 'Total Trips', Icons.directions_bus_filled, Colors.blue),
+                        _buildAnimatedStatCard(1, _monthlyStats.totalDistance, 'Distance', Icons.navigation_rounded, Colors.green),
                       ],
                     ),
 
@@ -209,17 +324,9 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
                                 label: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(filter['icon'], size: 16),
+                                    Icon(_getFilterIcon(filter['label']), size: 16),
                                     const SizedBox(width: 4),
                                     Text(filter['label']),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '(${filter['count']})',
-                                      style: TextStyle(
-                                        color: isSelected ? Colors.white70 : Colors.grey[600],
-                                        fontSize: 12,
-                                      ),
-                                    ),
                                   ],
                                 ),
                                 selected: isSelected,
@@ -227,7 +334,6 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
                                   setState(() {
                                     _selectedFilter = filter['label'];
                                   });
-                                  // TODO: Refetch data when filter changes
                                   _fetchTripData();
                                 },
                                 backgroundColor: Colors.white,
@@ -271,6 +377,21 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
               ),
             ),
     );
+  }
+
+  IconData _getFilterIcon(String filterLabel) {
+    switch (filterLabel) {
+      case 'All Trips':
+        return Icons.all_inclusive;
+      case 'Today':
+        return Icons.today;
+      case 'This Week':
+        return Icons.calendar_view_week;
+      case 'This Month':
+        return Icons.calendar_today;
+      default:
+        return Icons.all_inclusive;
+    }
   }
 
   Widget _buildAnimatedStatCard(int index, String value, String title, IconData icon, Color color) {
@@ -337,34 +458,33 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
   }
 
   Widget _buildTripList() {
-    // TODO: Replace with ListView.builder using _trips data
-    return ListView(
+    if (_trips.isEmpty) {
+      return const Center(
+        child: Text(
+          'No trips found',
+          style: TextStyle(
+            color: Colors.grey,
+            fontSize: 16,
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      children: [
-        _buildAnimatedTripCard(0, 'trip_001', 'City Center → Airport Terminal',
-            '2024-01-15 • 08:00 AM - 10:30 AM', '45.2 km', '2h 30m', '38', '₹950', 'Completed'),
-        const SizedBox(height: 16),
-        _buildAnimatedTripCard(1, 'trip_002', 'Airport Terminal → Railway Station',
-            '2024-01-15 • 11:15 AM - 01:45 PM', '32.8 km', '2h 30m', '42', '₹1,050', 'Completed'),
-        const SizedBox(height: 16),
-        _buildAnimatedTripCard(2, 'trip_003', 'Railway Station → Bus Stand',
-            '2024-01-15 • 02:30 PM - 04:00 PM', '18.5 km', '1h 30m', '35', '₹700', 'Completed'),
-      ],
+      itemCount: _trips.length,
+      itemBuilder: (context, index) {
+        final trip = _trips[index];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16.0),
+          child: _buildAnimatedTripCard(index, trip),
+        );
+      },
     );
   }
 
-  Widget _buildAnimatedTripCard(
-    int index,
-    String tripId,
-    String route,
-    String dateTime,
-    String distance,
-    String duration,
-    String passengers,
-    String revenue,
-    String status,
-  ) {
+  Widget _buildAnimatedTripCard(int index, Trip trip) {
     return SlideTransition(
       position: Tween<Offset>(
         begin: const Offset(0, 0.5),
@@ -397,7 +517,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
                   children: [
                     Expanded(
                       child: Text(
-                        route,
+                        trip.route,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -407,13 +527,13 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
+                        color: _getStatusColor(trip.status).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        status,
+                        trip.status,
                         style: TextStyle(
-                          color: Colors.green,
+                          color: _getStatusColor(trip.status),
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                         ),
@@ -423,7 +543,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  dateTime,
+                  trip.dateTime,
                   style: const TextStyle(
                     color: Colors.grey,
                     fontSize: 12,
@@ -433,10 +553,8 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildTripDetail('Distance', distance, Icons.navigation_rounded),
-                    _buildTripDetail('Duration', duration, Icons.access_time_rounded),
-                    _buildTripDetail('Passengers', passengers, Icons.people_alt_rounded),
-                    _buildTripDetail('Revenue', revenue, Icons.account_balance_wallet_rounded),
+                    _buildTripDetail('Distance', trip.distance, Icons.navigation_rounded),
+                    _buildTripDetail('Duration', trip.duration, Icons.access_time_rounded),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -444,7 +562,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      _viewTripDetails(tripId);
+                      _viewTripDetails(trip.id);
                     },
                     icon: const Icon(Icons.visibility, size: 16),
                     label: const Text('View Details'),
@@ -464,6 +582,21 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
         ),
       ),
     );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return Colors.green;
+      case 'in progress':
+        return Colors.blue;
+      case 'cancelled':
+        return Colors.red;
+      case 'scheduled':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildTripDetail(String title, String value, IconData icon) {
@@ -490,61 +623,49 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> with SingleTicker
   }
 }
 
-// TODO: Add data models for API responses
-// class Trip {
-//   final String id;
-//   final String route;
-//   final String dateTime;
-//   final String distance;
-//   final String duration;
-//   final String passengers;
-//   final String revenue;
-//   final String status;
-// 
-//   Trip({
-//     required this.id,
-//     required this.route,
-//     required this.dateTime,
-//     required this.distance,
-//     required this.duration,
-//     required this.passengers,
-//     required this.revenue,
-//     required this.status,
-//   });
-// 
-//   factory Trip.fromJson(Map<String, dynamic> json) {
-//     return Trip(
-//       id: json['id'],
-//       route: json['route'],
-//       dateTime: json['dateTime'],
-//       distance: json['distance'],
-//       duration: json['duration'],
-//       passengers: json['passengers'],
-//       revenue: json['revenue'],
-//       status: json['status'],
-//     );
-//   }
-// }
-// 
-// class MonthlyStats {
-//   final int totalTrips;
-//   final String totalDistance;
-//   final String totalRevenue;
-//   final int totalPassengers;
-// 
-//   MonthlyStats({
-//     this.totalTrips = 0,
-//     this.totalDistance = '0 km',
-//     this.totalRevenue = '₹0',
-//     this.totalPassengers = 0,
-//   });
-// 
-//   factory MonthlyStats.fromJson(Map<String, dynamic> json) {
-//     return MonthlyStats(
-//       totalTrips: json['totalTrips'],
-//       totalDistance: json['totalDistance'],
-//       totalRevenue: json['totalRevenue'],
-//       totalPassengers: json['totalPassengers'],
-//     );
-//   }
-// }
+// Data models for API responses
+class Trip {
+  final String id;
+  final String route;
+  final String dateTime;
+  final String distance;
+  final String duration;
+  final String status;
+
+  Trip({
+    required this.id,
+    required this.route,
+    required this.dateTime,
+    required this.distance,
+    required this.duration,
+    required this.status,
+  });
+
+  factory Trip.fromJson(Map<String, dynamic> json) {
+    return Trip(
+      id: json['id'] ?? '',
+      route: json['route'] ?? 'Unknown Route',
+      dateTime: json['dateTime'] ?? 'Unknown Date',
+      distance: json['distance'] ?? '0 km',
+      duration: json['duration'] ?? '0h 0m',
+      status: json['status'] ?? 'Unknown',
+    );
+  }
+}
+
+class MonthlyStats {
+  final int totalTrips;
+  final String totalDistance;
+
+  MonthlyStats({
+    this.totalTrips = 0,
+    this.totalDistance = '0 km',
+  });
+
+  factory MonthlyStats.fromJson(Map<String, dynamic> json) {
+    return MonthlyStats(
+      totalTrips: json['totalTrips'] ?? 0,
+      totalDistance: json['totalDistance'] ?? '0 km',
+    );
+  }
+}
