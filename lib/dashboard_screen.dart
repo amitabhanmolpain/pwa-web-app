@@ -10,6 +10,7 @@ import 'trip_history_screen.dart';
 import 'journey_planner_screen.dart';
 import 'settings_screen.dart';
 import 'support_center_screen.dart';
+import 'bus_schedule_screen.dart'; // Added import for BusScheduleScreen
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -27,7 +28,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   final Map<String, bool> _hoverStates = {
     'Start Trip': false,
     'Support': false,
-    'Trip History': false,
+    'Schedule': false, // Changed from 'Trip History' to 'Schedule'
     'Journey Planner': false,
   };
 
@@ -51,7 +52,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   final List<String> _features = [
     'Start Trip',
     'Support',
-    'Trip History',
+    'Schedule', // Changed from 'Trip History' to 'Schedule'
     'Journey Planner',
     'Setup Profile',
     'SOS Emergency',
@@ -263,9 +264,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     } else if (feature == 'Support') {
       Navigator.push(context,
           MaterialPageRoute(builder: (_) => const SupportCenterScreen()));
-    } else if (feature == 'Trip History') {
+    } else if (feature == 'Schedule') { // Changed from 'Trip History' to 'Schedule'
       Navigator.push(
-          context, MaterialPageRoute(builder: (_) => const TripHistoryScreen()));
+          context, MaterialPageRoute(builder: (_) => const BusScheduleScreen())); // Updated navigation
     } else if (feature == 'Journey Planner') {
       Navigator.push(context,
           MaterialPageRoute(builder: (_) => const JourneyPlannerScreen()));
@@ -695,22 +696,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                           children: [
                             Expanded(
                               child: _buildQuickActionButton(
-                                'Trip History',
-                                _hoverStates['Trip History']!
+                                'Schedule', // Changed from 'Trip History' to 'Schedule'
+                                _hoverStates['Schedule']! // Updated key
                                     ? theme.colorScheme.primary
                                     : theme.colorScheme.surface,
-                                Icons.description_outlined,
+                                Icons.schedule, // Changed icon from description_outlined to schedule
                                 () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                         builder: (_) =>
-                                            const TripHistoryScreen()),
+                                            const BusScheduleScreen()), // Updated navigation
                                   );
                                 },
                                 onHover: (h) =>
-                                    _setHoverState('Trip History', h),
-                                isHovered: _hoverStates['Trip History']!,
+                                    _setHoverState('Schedule', h), // Updated key
+                                isHovered: _hoverStates['Schedule']!, // Updated key
                               ),
                             ),
                             const SizedBox(width: 16),
