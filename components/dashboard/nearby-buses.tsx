@@ -3,9 +3,11 @@
 import type React from "react"
 
 import { Button } from "@/components/ui/button"
-import { Clock, ChevronLeft, ChevronRight, Navigation, Info, MapPin } from "lucide-react"
+import { Clock, ChevronLeft, ChevronRight, Navigation, Info, MapPin, Users } from "lucide-react"
 import { useState, useEffect } from "react"
 import { toast } from "@/hooks/use-toast"
+import { getNearbyBuses, getBusSeatOccupancy, calculateCrowdingStatus } from "@/lib/api/buses"
+import type { BusData, SeatOccupancyData } from "@/types/buses"
 
 const popularDestinations = [
   {
@@ -117,8 +119,8 @@ const busSampleData = [
 ];
 
 interface NearbyBusesProps {
-  onBusSelect?: (bus: any) => void
-  onTrackBus?: (bus: any) => void
+  onBusSelect?: (bus: BusData & { seatOccupancy: SeatOccupancyData }) => void
+  onTrackBus?: (bus: BusData & { seatOccupancy: SeatOccupancyData }) => void
 }
 
 export function NearbyBuses({ onBusSelect, onTrackBus }: NearbyBusesProps) {
@@ -174,61 +176,56 @@ export function NearbyBuses({ onBusSelect, onTrackBus }: NearbyBusesProps) {
     }
   }, []);
 
-  // Generate nearby buses based on user location
+  // Fetch nearby buses from API
   useEffect(() => {
-    if (!userLocation) return;
-    
-    // Function to calculate distance between two coordinates (Haversine formula)
-    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-      const R = 6371; // Radius of the earth in km
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = 
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-      const d = R * c; // Distance in km
-      return d;
+    const fetchNearbyBuses = async () => {
+      if (!userLocation) return;
+      
+      try {
+        // Fetch buses within 2km radius
+        const buses = await getNearbyBuses(userLocation.lat, userLocation.lng, 2);
+        
+        // Get occupancy data for each bus
+        const busesWithOccupancy = await Promise.all(
+          buses.map(async (bus) => {
+            const occupancy = await getBusSeatOccupancy(bus.id);
+            const crowdingStatus = calculateCrowdingStatus(occupancy);
+            
+            return {
+              ...bus,
+              seatOccupancy: {
+                ...occupancy,
+                crowdingStatus,
+              },
+            };
+          })
+        );
+        
+        // Sort by arrival time
+        busesWithOccupancy.sort((a, b) => {
+          const timeA = parseInt(a.arrivalTime.replace(" min", ""));
+          const timeB = parseInt(b.arrivalTime.replace(" min", ""));
+          return timeA - timeB;
+        });
+        
+        setNearbyBuses(busesWithOccupancy);
+      } catch (error) {
+        console.error("Error fetching nearby buses:", error);
+        toast({
+          title: "Error",
+          description: "Failed to fetch nearby buses. Please try again.",
+          variant: "destructive",
+        });
+      }
     };
     
-    // Generate buses to nearby popular destinations
-    const generatedBuses = popularDestinations.map((destination, index) => {
-      // Calculate distance to destination
-      const distance = calculateDistance(
-        userLocation.lat, 
-        userLocation.lng, 
-        destination.coordinates.lat, 
-        destination.coordinates.lng
-      );
-      
-      // Calculate arrival time based on distance (rough estimate)
-      const speed = Math.floor(Math.random() * 15 + 25); // 25-40 km/h
-      const timeInMinutes = Math.ceil((distance / speed) * 60);
-      const arrivalTime = timeInMinutes <= 1 ? "1 min" : `${timeInMinutes} min`;
-      
-      // Get a bus template
-      const busTemplate = busSampleData[index % busSampleData.length];
-      
-      return {
-        ...busTemplate,
-        destination: `${locationName} - ${destination.name}`,
-        from: locationName,
-        to: destination.name,
-        distance: distance.toFixed(1),
-        arrivalTime,
-      };
-    });
+    fetchNearbyBuses();
     
-    // Sort by arrival time (closest first)
-    generatedBuses.sort((a, b) => {
-      const timeA = parseInt(a.arrivalTime.replace(" min", ""));
-      const timeB = parseInt(b.arrivalTime.replace(" min", ""));
-      return timeA - timeB;
-    });
+    // Set up periodic refresh every 30 seconds
+    const refreshInterval = setInterval(fetchNearbyBuses, 30000);
     
-    setNearbyBuses(generatedBuses);
-  }, [userLocation, locationName]);
+    return () => clearInterval(refreshInterval);
+  }, [userLocation]);
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768
   const busesPerPage = isMobile ? 1 : 3
@@ -325,8 +322,9 @@ export function NearbyBuses({ onBusSelect, onTrackBus }: NearbyBusesProps) {
                           <span className="text-sm font-medium text-white">{bus.arrivalTime}</span>
                         </div>
                         <div className="flex items-center space-x-1">
-                          <div className={`w-2 h-2 rounded-full ${bus.capacityColor}`}></div>
-                          <span className="text-xs text-gray-200">{bus.capacity}</span>
+                          <Users className="w-3 h-3 text-gray-200" />
+                          <div className={`w-2 h-2 rounded-full ${bus.seatOccupancy.crowdingStatus.color}`}></div>
+                          <span className="text-xs text-gray-200">{bus.seatOccupancy.crowdingStatus.status}</span>
                         </div>
                       </div>
                     </div>
@@ -372,8 +370,11 @@ export function NearbyBuses({ onBusSelect, onTrackBus }: NearbyBusesProps) {
                           <span className="ml-1 font-medium">{bus.speed}</span>
                         </div>
                         <div>
-                          <span className="text-gray-500">Seats:</span>
-                          <span className="ml-1 font-medium">{bus.seatsAvailable}</span>
+                          <span className="text-gray-500">Available Seats:</span>
+                          <span className="ml-1 font-medium">
+                            {bus.seatOccupancy.totalSeats - bus.seatOccupancy.occupiedSeats}
+                            <span className="text-gray-400">/{bus.seatOccupancy.totalSeats}</span>
+                          </span>
                         </div>
                         <div>
                           <span className="text-gray-500">Driver:</span>
@@ -387,10 +388,24 @@ export function NearbyBuses({ onBusSelect, onTrackBus }: NearbyBusesProps) {
                           <span className="text-gray-500">Distance:</span>
                           <span className="ml-1 font-medium">{bus.distance} km</span>
                         </div>
+                        <div>
+                          <span className="text-gray-500">Last Updated:</span>
+                          <span className="ml-1 font-medium">
+                            {new Date(bus.seatOccupancy.lastUpdated).toLocaleTimeString()}
+                          </span>
+                        </div>
                       </div>
-                      {bus.hasWomenConductor && (
-                        <div className="text-xs text-pink-600">✓ Women conductor | {bus.womenSeats} women seats</div>
-                      )}
+                      <div className="flex justify-between items-center text-xs mt-2">
+                        {bus.hasWomenConductor && (
+                          <div className="text-pink-600">
+                            ✓ Women conductor | {bus.womenSeats - bus.seatOccupancy.womenSeatsOccupied} women seats available
+                          </div>
+                        )}
+                        <div className={`flex items-center gap-1 ${bus.seatOccupancy.crowdingStatus.color.replace('bg-', 'text-')}`}>
+                          <Users className="w-3 h-3" />
+                          <span>{bus.seatOccupancy.crowdingStatus.status}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
