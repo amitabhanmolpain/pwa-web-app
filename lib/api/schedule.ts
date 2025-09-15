@@ -24,7 +24,7 @@ export interface CalendarDate {
 }
 
 // API functions for schedule-related operations
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api'
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
 
 export async function submitDateRequest(request: DateRequest): Promise<{ success: boolean; message: string }> {
   try {
