@@ -1,5 +1,6 @@
-// signup_screen.dart
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -14,17 +15,36 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _licenseController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
-  // TODO: Add backend API integration for signup
+  // API endpoints - update with your actual Spring Boot backend URLs
+  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
+  static const String SIGNUP_ENDPOINT = '$BASE_URL/auth/register';
+  static const String VERIFY_EMAIL_ENDPOINT = '$BASE_URL/auth/verify-email';
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _phoneController.dispose();
+    _licenseController.dispose();
+    super.dispose();
+  }
+
+  // Sign up with Spring Boot backend
   Future<void> _signUp() async {
     if (_formKey.currentState!.validate()) {
       if (_passwordController.text != _confirmPasswordController.text) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Passwords do not match'),
+            backgroundColor: Colors.red,
           ),
         );
         return;
@@ -35,32 +55,76 @@ class _SignUpScreenState extends State<SignUpScreen> {
       });
 
       try {
-        // Simulate API call delay
-        await Future.delayed(const Duration(seconds: 2));
-        
-        // TODO: Replace with actual API call
-        // final response = await AuthAPI.register(
-        //   name: _nameController.text,
-        //   email: _emailController.text,
-        //   password: _passwordController.text,
-        // );
-        
-        // if (response.success) {
+        final response = await http.post(
+          Uri.parse(SIGNUP_ENDPOINT),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: json.encode({
+            'name': _nameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'password': _passwordController.text.trim(),
+            'phoneNumber': _phoneController.text.trim(),
+            'licenseNumber': _licenseController.text.trim(),
+            'role': 'DRIVER', // Assuming driver role for this app
+          }),
+        );
+
+        if (response.statusCode == 201) {
+          // Registration successful
+          final Map<String, dynamic> responseData = json.decode(response.body);
+          
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Account created successfully!'),
+            SnackBar(
+              content: Text(responseData['message'] ?? 'Account created successfully!'),
+              backgroundColor: Colors.green,
             ),
           );
-          Navigator.pop(context); // Return to login screen
-        // } else {
-        //   ScaffoldMessenger.of(context).showSnackBar(
-        //     SnackBar(content: Text(response.message)),
-        //   );
-        // }
+          
+          // Check if email verification is required
+          if (responseData.containsKey('requiresVerification') && 
+              responseData['requiresVerification'] == true) {
+            _showVerificationDialog();
+          } else {
+            Navigator.pop(context); // Return to login screen
+          }
+          
+        } else if (response.statusCode == 400) {
+          // Bad request - validation errors
+          final Map<String, dynamic> errorData = json.decode(response.body);
+          final String errorMessage = errorData['message'] ?? 
+                                    errorData['error'] ?? 
+                                    'Registration failed. Please check your information.';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.red,
+            ),
+          );
+        } else if (response.statusCode == 409) {
+          // Conflict - user already exists
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Email already registered. Please sign in instead.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        } else {
+          // Other server errors
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Registration failed. Please try again later.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       } catch (e) {
+        // Network or other errors
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registration failed. Please try again.'),
+          SnackBar(
+            content: Text('Network error: Backend Error due to Anshul'),
+            backgroundColor: Colors.red,
           ),
         );
       } finally {
@@ -71,13 +135,66 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
+  // Show email verification dialog
+  void _showVerificationDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Verify Your Email'),
+          content: const Text(
+            'A verification email has been sent to your email address. '
+            'Please verify your email before signing in.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.pop(context); // Return to login screen
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Optional: Function to resend verification email
+  Future<void> _resendVerificationEmail(String email) async {
+    try {
+      final response = await http.post(
+        Uri.parse(VERIFY_EMAIL_ENDPOINT),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'email': email}),
+      );
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Verification email sent successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to send verification email.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -110,6 +227,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 24),
+                    
                     // Name Field
                     Text(
                       'Full Name',
@@ -149,6 +267,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Please enter your name';
+                          }
+                          if (value.length < 2) {
+                            return 'Name must be at least 2 characters';
                           }
                           return null;
                         },
@@ -200,6 +321,99 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
                               .hasMatch(value)) {
                             return 'Please enter a valid email';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    // Phone Number Field
+                    Text(
+                      'Phone Number',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.2),
+                        ),
+                      ),
+                      child: TextFormField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Enter your phone number',
+                          hintStyle: TextStyle(
+                            color: Colors.white.withOpacity(0.6),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.phone_outlined,
+                            color: Colors.white.withOpacity(0.7),
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter your phone number';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    // License Number Field
+                    Text(
+                      'Driver License Number',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.2),
+                        ),
+                      ),
+                      child: TextFormField(
+                        controller: _licenseController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Enter your license number',
+                          hintStyle: TextStyle(
+                            color: Colors.white.withOpacity(0.6),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.card_membership_outlined,
+                            color: Colors.white.withOpacity(0.7),
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter your license number';
                           }
                           return null;
                         },
