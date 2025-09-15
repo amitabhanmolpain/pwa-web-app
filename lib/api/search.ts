@@ -40,7 +40,7 @@ export interface SearchParams {
   busType?: BusType | 'all'
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api'
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
 
 export async function searchAvailableBuses(params: SearchParams): Promise<Bus[]> {
   try {

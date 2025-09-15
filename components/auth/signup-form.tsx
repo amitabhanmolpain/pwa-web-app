@@ -44,7 +44,7 @@ export function SignupForm() {
       }
 
       // Call the register API endpoint
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch('http://localhost:8080/api/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,7 +97,7 @@ export function SignupForm() {
       // For now, we're making a simulated API call.
       
       // Simulate API call for now
-      const response = await fetch('/api/auth/google', {
+      const response = await fetch('http://localhost:8080/api/auth/google', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

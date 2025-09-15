@@ -7,6 +7,10 @@
 // 409 - email already exists
 // 500 - server error
 
+// app/api/auth/register/route.ts
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}))
@@ -18,20 +22,24 @@ export async function POST(req: Request) {
       })
     }
 
-    const exampleResponse = {
-      message: 'NOT_IMPLEMENTED',
-      hint: 'Replace with real registration logic: validate, hash password, create user in DB, and return created user id.',
-      received: { name: body.name, email: body.email },
-    }
+    // Forward request to Spring Boot backend
+    const backendResponse = await fetch("${BASE_URL}/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
 
-    return new Response(JSON.stringify(exampleResponse), {
-      status: 501,
-      headers: { 'Content-Type': 'application/json' },
+    const data = await backendResponse.json()
+
+    return new Response(JSON.stringify(data), {
+      status: backendResponse.status,
+      headers: { "Content-Type": "application/json" },
     })
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'internal_server_error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+    console.error("Proxy error:", err)
+    return new Response(JSON.stringify({ error: "internal_server_error" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
     })
   }
 }
