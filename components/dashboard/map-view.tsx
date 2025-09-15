@@ -4,11 +4,46 @@ import { useEffect, useRef, useState } from "react"
 import { Navigation, Maximize2, Bell, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
+type BusStatus = 'approaching' | 'arrived' | 'departed'
+
+interface TrackingBus {
+  route: string
+  from?: string
+  to?: string
+  status?: BusStatus
+  type?: string
+}
+
 interface MapViewProps {
-  trackingBus?: any
+  trackingBus?: TrackingBus
   showNearbyBuses?: boolean
   onSOSClick?: () => void
   onNotificationClick?: () => void
+}
+
+type Marker = {
+  setLatLng: (latLng: [number, number] | { lat: number; lng: number }) => void
+  remove: () => void
+  bindPopup: (content: string) => any
+  openPopup: () => void
+}
+
+interface LeafletMap {
+  setView: (center: [number, number], zoom: number) => LeafletMap
+  remove: () => void
+  removeLayer: (layer: any) => LeafletMap
+  panTo: (latLng: [number, number], options?: { animate?: boolean; duration?: number }) => LeafletMap
+  fitBounds: (bounds: any, options?: { padding?: [number, number] }) => LeafletMap
+  addLayer: (layer: any) => LeafletMap
+}
+
+interface LeafletStatic {
+  map: (element: HTMLElement | string) => LeafletMap
+  tileLayer: (urlTemplate: string, options?: any) => any
+  marker: (latLng: [number, number], options?: any) => Marker
+  polyline: (latlngs: [number, number][], options?: any) => any
+  latLngBounds: (corner1: [number, number], corner2: [number, number]) => any
+  divIcon: (options: any) => any
 }
 
 export function MapView({ 
@@ -20,12 +55,12 @@ export function MapView({
   const mapRef = useRef<HTMLDivElement>(null)
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [map, setMap] = useState<any>(null)
-  const [busMarkers, setBusMarkers] = useState<any[]>([])
-  const [trackingMarker, setTrackingMarker] = useState<any>(null)
-  const [routeLayer, setRouteLayer] = useState<any>(null)
-  const [userMarker, setUserMarker] = useState<any>(null)
-  const [routePoints, setRoutePoints] = useState<any[]>([])
+  const [map, setMap] = useState<LeafletMap | null>(null)
+  const [busMarkers, setBusMarkers] = useState<Marker[]>([])
+  const [trackingMarker, setTrackingMarker] = useState<Marker | null>(null)
+  const [routeLayer, setRouteLayer] = useState<{ remove: () => void; addTo: (map: LeafletMap) => void } | null>(null)
+  const [userMarker, setUserMarker] = useState<Marker | null>(null)
+  const [routePoints, setRoutePoints] = useState<[number, number][]>([])
   const [busMovementInterval, setBusMovementInterval] = useState<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
@@ -76,7 +111,7 @@ export function MapView({
   }, [])
 
   useEffect(() => {
-    if (!userLocation || !mapRef.current) return
+    if (!userLocation || !mapRef.current || map) return
 
     const loadLeafletMap = async () => {
       if (!(window as any).L) {
@@ -105,9 +140,9 @@ export function MapView({
     }
 
     const initializeLeafletMap = () => {
-      if (!mapRef.current || !userLocation || !(window as any).L) return
+      if (!mapRef.current || !userLocation || !(window as any).L || map) return
 
-      const L = (window as any).L
+      const L = (window as any).L as LeafletStatic
 
       // Create map centered on user's location with improved zoom level
       const newMap = L.map(mapRef.current).setView([userLocation.lat, userLocation.lng], 15)
@@ -118,7 +153,7 @@ export function MapView({
         maxZoom: 19,
       }).addTo(newMap)
 
-      setMap(newMap)
+      setMap(newMap as LeafletMap)
 
       // Create a pulsing user marker with accuracy circle
       const userIcon = L.divIcon({
@@ -231,20 +266,37 @@ export function MapView({
     
     // Cleanup function
     return () => {
-      if (map) {
-        map.remove()
-        setMap(null)
-      }
-      
-      if (busMovementInterval) {
-        clearInterval(busMovementInterval)
-        setBusMovementInterval(null)
+      try {
+        if (map) {
+          // Clean up all markers and layers
+          userMarker?.remove()
+          busMarkers.forEach(marker => marker.remove())
+          trackingMarker?.remove()
+          routeLayer?.remove()
+
+          // Remove the map instance
+          map.remove()
+          
+          // Reset all state
+          setMap(null)
+          setBusMarkers([])
+          setTrackingMarker(null)
+          setRouteLayer(null)
+          setUserMarker(null)
+        }
+        
+        if (busMovementInterval) {
+          clearInterval(busMovementInterval)
+          setBusMovementInterval(null)
+        }
+      } catch (error) {
+        console.error('Error cleaning up map:', error)
       }
     }
   }, [userLocation, showNearbyBuses])
 
   useEffect(() => {
-    if (!map || !trackingBus || !(window as any).L) return
+    if (!mapRef.current || !map || !trackingBus || !(window as any).L) return
 
     const L = (window as any).L
 
@@ -396,7 +448,7 @@ export function MapView({
       setRouteLayer(route);
       
       // If bus is not arrived, animate it along the route
-      if (trackingBus.status !== 'arrived') {
+      if (trackingBus.status && ['approaching', 'departed'].includes(trackingBus.status)) {
         let currentPoint = 0;
         
         // Set initial position

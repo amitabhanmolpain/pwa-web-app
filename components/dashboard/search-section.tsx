@@ -10,9 +10,48 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, MapPin, Clock, Users, Navigation, Bus, ArrowRight } from "lucide-react"
 import { toast } from "sonner"
 
+interface Stop {
+  location: string
+  time: string
+  duration?: string
+  platformNo?: string
+}
+
+interface BusTransfer {
+  location: string
+  fromBus: string
+  toBus: string
+  transferTime: string
+  platformChange: string
+  waitingTime: string
+}
+
+interface Bus {
+  id: string
+  route: string
+  from: string
+  to: string
+  departure: string
+  arrival: string
+  seatsAvailable: number
+  totalSeats: number
+  speed: string
+  hasWomenConductor: boolean
+  womenSeats: number
+  image: string
+  driverName: string
+  driverPhone: string
+  type: string
+  price: string
+  busCategory: string
+  stops?: Stop[]
+  transfers?: BusTransfer[]
+  hasTransfers?: boolean
+}
+
 interface SearchSectionProps {
   onSearch?: (searchData: any) => void
-  onTrackBus?: (busData: any) => void
+  onTrackBus?: (busData: Bus) => void
   searchData?: {
     from: string
     to: string
@@ -20,14 +59,30 @@ interface SearchSectionProps {
   }
 }
 
+interface Stop {
+  location: string
+  time: string
+  duration?: string
+  platformNo?: string
+}
+
+interface BusTransfer {
+  location: string
+  fromBus: string
+  toBus: string
+  transferTime: string
+  platformChange: string
+  waitingTime: string
+}
+
 const sampleBuses = [
   {
     id: "KA01-2345",
-    route: "Route WF-EC",
+    route: "Route WF-MJ-EC",
     from: "Whitefield",
     to: "Electronic City",
     departure: "07:30",
-    arrival: "09:15",
+    arrival: "09:45",
     seatsAvailable: 12,
     totalSeats: 45,
     speed: "45 km/h",
@@ -39,14 +94,31 @@ const sampleBuses = [
     type: "intercity",
     price: "₹85",
     busCategory: "Intercity Express",
+    stops: [
+      { location: "Whitefield", time: "07:30", platformNo: "1A" },
+      { location: "Marathahalli", time: "08:00", duration: "5 min", platformNo: "2B" },
+      { location: "Silk Board", time: "08:45", duration: "3 min", platformNo: "1C" },
+      { location: "Electronic City", time: "09:45", platformNo: "3A" }
+    ],
+    transfers: [
+      {
+        location: "Majestic Bus Station",
+        fromBus: "WF-MJ (KA01-2345)",
+        toBus: "MJ-EC (KA01-5678)",
+        transferTime: "08:30",
+        platformChange: "Platform 3 to Platform 5",
+        waitingTime: "10 min"
+      }
+    ],
+    hasTransfers: true
   },
   {
     id: "KA02-6789",
-    route: "Route KR-IN",
+    route: "Route KR-MJ-IN",
     from: "Koramangala",
     to: "Indiranagar",
     departure: "08:00",
-    arrival: "08:45",
+    arrival: "09:15",
     seatsAvailable: 8,
     totalSeats: 40,
     speed: "35 km/h",
@@ -56,8 +128,25 @@ const sampleBuses = [
     driverName: "Suresh Reddy",
     driverPhone: "+91 98765 43211",
     type: "city",
-    price: "₹25",
+    price: "₹35",
     busCategory: "City Bus",
+    stops: [
+      { location: "Koramangala", time: "08:00", platformNo: "2A" },
+      { location: "Majestic", time: "08:30", duration: "10 min", platformNo: "4B" },
+      { location: "MG Road", time: "08:50", duration: "3 min", platformNo: "1A" },
+      { location: "Indiranagar", time: "09:15", platformNo: "2C" }
+    ],
+    transfers: [
+      {
+        location: "Majestic Bus Station",
+        fromBus: "KR-MJ (KA02-6789)",
+        toBus: "MJ-IN (KA02-9012)",
+        transferTime: "08:40",
+        platformChange: "Platform 4B to Platform 1C",
+        waitingTime: "5 min"
+      }
+    ],
+    hasTransfers: true
   },
   {
     id: "KA03-1234",
@@ -181,7 +270,7 @@ export function SearchSection({ onSearch, onTrackBus, searchData }: SearchSectio
   const [busId, setBusId] = useState("")
   const [womenMode, setWomenMode] = useState(false)
   const [busType, setBusType] = useState(searchData?.busType || "all")
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<Bus[]>([])
   const [hasSearched, setHasSearched] = useState(true)
 
   useEffect(() => {
@@ -424,6 +513,61 @@ export function SearchSection({ onSearch, onTrackBus, searchData }: SearchSectio
                             {bus.departure} - {bus.arrival}
                           </span>
                         </div>
+
+                        {/* Stops and Transfers Information */}
+                        {bus.stops && bus.stops.length > 0 && (
+                          <div className="mt-4 space-y-2">
+                            <h4 className="text-sm font-semibold text-gray-700">Route Stops:</h4>
+                            <div className="relative pl-4 space-y-3">
+                              <div className="absolute left-1.5 top-2 bottom-2 w-0.5 bg-orange-200"></div>
+                              {bus.stops.map((stop: Stop, index: number) => (
+                                <div key={index} className="flex items-start space-x-3">
+                                  <div className="relative flex-shrink-0">
+                                    <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-medium text-sm text-gray-900">{stop.location}</span>
+                                      <span className="text-sm text-gray-600">{stop.time}</span>
+                                    </div>
+                                    {stop.duration && (
+                                      <span className="text-xs text-gray-500">Stop Duration: {stop.duration}</span>
+                                    )}
+                                    {stop.platformNo && (
+                                      <span className="text-xs text-orange-600 block">Platform: {stop.platformNo}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Bus Transfer Information */}
+                        {bus.transfers && bus.transfers.length > 0 && (
+                          <div className="mt-4 space-y-2">
+                            <h4 className="text-sm font-semibold text-orange-600 flex items-center">
+                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                              </svg>
+                              Bus Transfer Required
+                            </h4>
+                            {bus.transfers.map((transfer: BusTransfer, index: number) => (
+                              <div key={index} className="bg-orange-50 rounded-lg p-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium text-sm text-gray-900">{transfer.location}</span>
+                                  <span className="text-sm text-orange-600">{transfer.transferTime}</span>
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="text-xs text-gray-600">From Bus: {transfer.fromBus}</div>
+                                  <div className="text-xs text-gray-600">To Bus: {transfer.toBus}</div>
+                                  <div className="text-xs text-orange-600">{transfer.platformChange}</div>
+                                  <div className="text-xs text-gray-500">Waiting Time: {transfer.waitingTime}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* Details grid */}
