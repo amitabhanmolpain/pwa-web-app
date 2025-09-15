@@ -11,9 +11,30 @@ import {
   sendBusArrivalNotification, 
   sendJourneyStartedNotification 
 } from "@/lib/notification-utils"
+import {
+  DriverLocation,
+  BusStatus,
+  getDriverLocation,
+  getBusStatus,
+  subscribeToLocationUpdates,
+  TrackingParams
+} from "@/lib/api/tracking"
 
 interface TrackSectionProps {
-  busData?: any
+  busData?: {
+    route: string;
+    busId: string;
+    driverId?: string;
+    driverName: string;
+    driverPhone: string;
+    seatsAvailable: number;
+    womenSeats: number;
+    hasWomenConductor: boolean;
+    image?: string;
+    destination?: string;
+    from?: string;
+    to?: string;
+  }
 }
 
 export function TrackSection({ busData }: TrackSectionProps) {
@@ -30,12 +51,16 @@ export function TrackSection({ busData }: TrackSectionProps) {
   const [watchId, setWatchId] = useState<number | null>(null)
   const [nearbyStartPoint, setNearbyStartPoint] = useState<{lat: number, lng: number} | null>(null)
   
-  // Get user's location with continuous watching
+  // Get user's location and set up live tracking
   useEffect(() => {
+    if (!busData?.busId) return;
+
+    let cleanup: (() => void) | null = null;
+
+    // Get user's location
     if (navigator.geolocation) {
-      // Get initial location
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
           const userPos = {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
@@ -43,11 +68,43 @@ export function TrackSection({ busData }: TrackSectionProps) {
           setCurrentLocation(userPos);
           setLocationAccuracy(position.coords.accuracy);
           
-          // Try to get location name using reverse geocoding
-          fetchLocationName(userPos.lat, userPos.lng);
+          // Get location name using reverse geocoding
+          await fetchLocationName(userPos.lat, userPos.lng);
           
-          // Generate a realistic nearby starting point for the bus (500-1000m away)
-          generateNearbyStartPoint(userPos.lat, userPos.lng);
+          // Start real-time bus tracking
+          const trackingParams: TrackingParams = {
+            busId: busData.busId,
+            driverId: busData.driverId,
+            route: busData.route
+          };
+
+          cleanup = subscribeToLocationUpdates(
+            trackingParams,
+            (location: DriverLocation) => {
+              setBusLocation({ lat: location.latitude, lng: location.longitude });
+              setCurrentSpeed(location.speed);
+              
+              // Update bus status based on location
+              if (location.nextStop === userLocationName && !busAtUserLocation) {
+                setBusStatus('approaching');
+                sendBusApproachingNotification(busData.route, userLocationName, 5);
+              } else if (location.currentLocation === userLocationName && !journeyStarted) {
+                setBusStatus('arrived');
+                setBusAtUserLocation(true);
+                sendBusArrivalNotification(busData.route, userLocationName);
+              } else if (journeyStarted) {
+                setBusStatus('departed');
+              }
+            },
+            (error: Error) => {
+              console.error('Tracking error:', error);
+              toast({
+                title: "Tracking Error",
+                description: "Unable to get real-time bus location. Retrying...",
+                variant: "destructive",
+              });
+            }
+          );
         },
         (error) => {
           console.error("Error getting location:", error);
@@ -61,37 +118,18 @@ export function TrackSection({ busData }: TrackSectionProps) {
           maximumAge: 0
         }
       );
-      
-      // Set up continuous location watching for real-time updates
-      const id = navigator.geolocation.watchPosition(
-        (position) => {
-          const userPos = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          };
-          setCurrentLocation(userPos);
-          setLocationAccuracy(position.coords.accuracy);
-        },
-        (error) => {
-          console.error("Error watching location:", error);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        }
-      );
-      
-      setWatchId(id);
-      
-      // Cleanup
-      return () => {
-        if (watchId !== null) {
-          navigator.geolocation.clearWatch(watchId);
-        }
-      };
     }
-  }, []);
+
+    // Cleanup function
+    return () => {
+      if (cleanup) {
+        cleanup();
+      }
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [busData]);
   
   // Fetch location name using reverse geocoding
   const fetchLocationName = async (lat: number, lng: number) => {
@@ -149,8 +187,60 @@ export function TrackSection({ busData }: TrackSectionProps) {
     setBusLocation({ lat: newLat, lng: newLng });
   };
 
+  // Track detailed bus status
   useEffect(() => {
-    if (!busData || !nearbyStartPoint) return
+    if (!busData?.busId) return;
+
+    let statusInterval: NodeJS.Timeout;
+
+    const fetchBusStatus = async () => {
+      try {
+        const status = await getBusStatus(busData.busId);
+        
+        // Update destination if available
+        if (status.nextStop) {
+          setDestinationName(status.nextStop);
+        }
+        
+        // Calculate remaining time based on bus status
+        if (status.estimatedArrival) {
+          setEstimatedTime(status.estimatedArrival);
+        }
+        
+        // Update the UI with occupancy info
+        if (status.occupancy !== undefined) {
+          const remainingSeats = status.totalCapacity - status.occupancy;
+          busData.seatsAvailable = remainingSeats;
+        }
+        
+        // Show traffic/weather alerts if conditions are poor
+        if (status.trafficCondition === 'heavy' || status.weatherCondition === 'bad') {
+          toast({
+            title: "Travel Alert",
+            description: `Heavy ${status.trafficCondition === 'heavy' ? 'traffic' : 'weather'} conditions may cause delays.`,
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching bus status:', error);
+      }
+    };
+
+    // Initial fetch
+    fetchBusStatus();
+    
+    // Set up polling interval for status updates (every 30 seconds)
+    statusInterval = setInterval(fetchBusStatus, 30000);
+
+    return () => {
+      if (statusInterval) {
+        clearInterval(statusInterval);
+      }
+    };
+  }, [busData]);
+
+  useEffect(() => {
+    if (!busData) return;
 
     // Set destination based on busData or defaults
     if (busData.from && busData.to) {
@@ -247,6 +337,10 @@ export function TrackSection({ busData }: TrackSectionProps) {
       setBusStatus('approaching');
       
       // Get a route from nearby start point to user's location
+      if (!nearbyStartPoint) {
+        console.error("No nearby start point available");
+        return;
+      }
       const approachRoute = await fetchRouteFromOSRM(nearbyStartPoint, currentLocation);
       
       if (!approachRoute || approachRoute.length === 0) {
@@ -451,7 +545,12 @@ export function TrackSection({ busData }: TrackSectionProps) {
         <CardContent className="p-0">
           <div className="h-80">
             <MapView 
-              trackingBus={{...busData, from: userLocationName, to: destinationName, status: busStatus}} 
+              trackingBus={busData ? {
+                ...busData,
+                from: userLocationName,
+                to: destinationName,
+                status: busStatus === 'en-route' ? undefined : busStatus
+              } : undefined} 
               showNearbyBuses={false} 
             />
           </div>
