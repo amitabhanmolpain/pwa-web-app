@@ -5,6 +5,12 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MapView } from "@/components/dashboard/map-view"
 import { toast } from "@/hooks/use-toast"
+import { 
+  requestNotificationPermission, 
+  sendBusApproachingNotification, 
+  sendBusArrivalNotification, 
+  sendJourneyStartedNotification 
+} from "@/lib/notification-utils"
 
 interface TrackSectionProps {
   busData?: any
@@ -15,11 +21,168 @@ export function TrackSection({ busData }: TrackSectionProps) {
   const [busLocation, setBusLocation] = useState({ lat: 12.9716, lng: 77.5946 })
   const [currentSpeed, setCurrentSpeed] = useState(25)
   const [estimatedTime, setEstimatedTime] = useState("45 mins")
+  const [busStatus, setBusStatus] = useState<'approaching' | 'arrived' | 'departed' | 'en-route'>('en-route')
+  const [busAtUserLocation, setBusAtUserLocation] = useState(false)
+  const [journeyStarted, setJourneyStarted] = useState(false)
+  const [userLocationName, setUserLocationName] = useState("Your Location")
+  const [destinationName, setDestinationName] = useState("MG Road")
+  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null)
+  const [watchId, setWatchId] = useState<number | null>(null)
+  const [nearbyStartPoint, setNearbyStartPoint] = useState<{lat: number, lng: number} | null>(null)
+  
+  // Get user's location with continuous watching
+  useEffect(() => {
+    if (navigator.geolocation) {
+      // Get initial location
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const userPos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          setCurrentLocation(userPos);
+          setLocationAccuracy(position.coords.accuracy);
+          
+          // Try to get location name using reverse geocoding
+          fetchLocationName(userPos.lat, userPos.lng);
+          
+          // Generate a realistic nearby starting point for the bus (500-1000m away)
+          generateNearbyStartPoint(userPos.lat, userPos.lng);
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+          // Default location (Bangalore center)
+          setCurrentLocation({ lat: 12.9716, lng: 77.5946 });
+          setUserLocationName("Bangalore");
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+      
+      // Set up continuous location watching for real-time updates
+      const id = navigator.geolocation.watchPosition(
+        (position) => {
+          const userPos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          setCurrentLocation(userPos);
+          setLocationAccuracy(position.coords.accuracy);
+        },
+        (error) => {
+          console.error("Error watching location:", error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+      
+      setWatchId(id);
+      
+      // Cleanup
+      return () => {
+        if (watchId !== null) {
+          navigator.geolocation.clearWatch(watchId);
+        }
+      };
+    }
+  }, []);
+  
+  // Fetch location name using reverse geocoding
+  const fetchLocationName = async (lat: number, lng: number) => {
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+      const data = await response.json();
+      
+      if (data.address) {
+        const locality = data.address.suburb || 
+                        data.address.neighbourhood || 
+                        data.address.residential || 
+                        data.address.road ||
+                        data.address.city_district;
+        if (locality) {
+          setUserLocationName(locality);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching location name:", error);
+    }
+  };
+  
+  // Generate a realistic nearby starting point for the bus
+  const generateNearbyStartPoint = (lat: number, lng: number) => {
+    // Calculate a point 500-1000m away in a random direction
+    const distance = 0.5 + Math.random() * 0.5; // 0.5-1km
+    const angle = Math.random() * 2 * Math.PI; // Random angle in radians
+    
+    // Earth's radius in km
+    const earthRadius = 6371;
+    
+    // Convert distance to radians
+    const distanceRadians = distance / earthRadius;
+    
+    // Convert lat/lng to radians
+    const latRad = lat * Math.PI / 180;
+    const lngRad = lng * Math.PI / 180;
+    
+    // Calculate new position
+    const newLatRad = Math.asin(
+      Math.sin(latRad) * Math.cos(distanceRadians) + 
+      Math.cos(latRad) * Math.sin(distanceRadians) * Math.cos(angle)
+    );
+    
+    const newLngRad = lngRad + Math.atan2(
+      Math.sin(angle) * Math.sin(distanceRadians) * Math.cos(latRad),
+      Math.cos(distanceRadians) - Math.sin(latRad) * Math.sin(newLatRad)
+    );
+    
+    // Convert back to degrees
+    const newLat = newLatRad * 180 / Math.PI;
+    const newLng = newLngRad * 180 / Math.PI;
+    
+    setNearbyStartPoint({ lat: newLat, lng: newLng });
+    setBusLocation({ lat: newLat, lng: newLng });
+  };
 
   useEffect(() => {
-    if (!busData) return
+    if (!busData || !nearbyStartPoint) return
+
+    // Set destination based on busData or defaults
+    if (busData.from && busData.to) {
+      setDestinationName(busData.to)
+    } else {
+      // Default destination if not specified
+      setDestinationName("MG Road")
+    }
 
     const calculateEstimatedTime = () => {
+      // If we have user's real location, calculate more realistic ETA
+      if (nearbyStartPoint && currentLocation) {
+        // Calculate distance in km using Haversine formula
+        const R = 6371; // Earth's radius in km
+        const dLat = (currentLocation.lat - nearbyStartPoint.lat) * Math.PI / 180;
+        const dLon = (currentLocation.lng - nearbyStartPoint.lng) * Math.PI / 180;
+        const a = 
+          Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.cos(nearbyStartPoint.lat * Math.PI / 180) * Math.cos(currentLocation.lat * Math.PI / 180) * 
+          Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const distance = R * c;
+        
+        // Estimate time based on average bus speed (20-30 km/h in city traffic)
+        const avgSpeed = 20 + Math.random() * 10;
+        const timeInHours = distance / avgSpeed;
+        const timeInMinutes = Math.max(1, Math.round(timeInHours * 60)); // At least 1 minute
+        
+        return `${timeInMinutes} mins`;
+      }
+      
+      // Fallback to predefined routes if real location not available
       const routeDistances: { [key: string]: number } = {
         "Koramangala-Whitefield": 25,
         "Whitefield-Electronic City": 35,
@@ -27,9 +190,10 @@ export function TrackSection({ busData }: TrackSectionProps) {
         "Koramangala-Indiranagar": 8,
         "Marathahalli-Silk Board": 20,
         "Hebbal-Yesvantpur": 12,
+        "Vijaynagar-MG Road": 18,
       }
 
-      const routeKey = `${busData.from}-${busData.to}`
+      const routeKey = `${userLocationName}-${destinationName}`
       const distance = routeDistances[routeKey] || 20
       const avgSpeed = 30 // km/h average in Bangalore traffic
       const timeInHours = distance / avgSpeed
@@ -43,20 +207,138 @@ export function TrackSection({ busData }: TrackSectionProps) {
 
     toast({
       title: "🚌 Bus Tracking Started",
-      description: `Now tracking ${busData.route} from ${busData.from} to ${busData.to}. Speed: ${currentSpeed} km/h, Seats: ${busData.seatsAvailable}, ETA: ${estimatedTime}`,
+      description: `Now tracking ${busData.route} from near ${userLocationName} to ${destinationName}. ETA: ${estimatedTime}`,
     })
 
-    const interval = setInterval(() => {
-      setBusLocation((prev) => ({
-        lat: prev.lat + (Math.random() - 0.5) * 0.001,
-        lng: prev.lng + (Math.random() - 0.5) * 0.001,
-      }))
+    // Request notification permissions
+    requestNotificationPermission();
 
-      setCurrentSpeed(Math.floor(Math.random() * 45 + 15))
-    }, 1500) // Update every 1.5 seconds for rapid changes
+    // Generate road-following route between points
+    const fetchRouteFromOSRM = async (start: {lat: number, lng: number}, end: {lat: number, lng: number}) => {
+      try {
+        // Use Open Source Routing Machine (OSRM) for route calculation
+        const response = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`
+        );
+        const data = await response.json();
+        
+        if (data.routes && data.routes.length > 0) {
+          return data.routes[0].geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]);
+        }
+      } catch (error) {
+        console.error("Error fetching route:", error);
+      }
+      
+      // Fallback: generate a simple straight line with slight randomness
+      const steps = 20;
+      const route = [];
+      for (let i = 0; i <= steps; i++) {
+        const ratio = i / steps;
+        const lat = start.lat + (end.lat - start.lat) * ratio + (Math.random() - 0.5) * 0.001;
+        const lng = start.lng + (end.lng - start.lng) * ratio + (Math.random() - 0.5) * 0.001;
+        route.push([lat, lng]);
+      }
+      return route;
+    };
 
-    return () => clearInterval(interval)
-  }, [busData])
+    // Start journey simulation with real-world routing
+    const simulateJourney = async () => {
+      // Initialize with the nearby start point
+      setBusStatus('approaching');
+      
+      // Get a route from nearby start point to user's location
+      const approachRoute = await fetchRouteFromOSRM(nearbyStartPoint, currentLocation);
+      
+      if (!approachRoute || approachRoute.length === 0) {
+        console.error("Failed to get approach route");
+        return;
+      }
+      
+      // Send approaching notification (ETA based on route length)
+      const approachEtaMinutes = Math.max(1, Math.ceil(approachRoute.length / 10));
+      sendBusApproachingNotification(busData.route, userLocationName, approachEtaMinutes);
+      
+      // Animate bus along approach route
+      let currentStep = 0;
+      const approachInterval = setInterval(() => {
+        if (currentStep >= approachRoute.length - 1) {
+          clearInterval(approachInterval);
+          
+          // Bus has arrived at user's location
+          setBusLocation(currentLocation);
+          setBusStatus('arrived');
+          setBusAtUserLocation(true);
+          
+          // Send arrival notification
+          sendBusArrivalNotification(busData.route, userLocationName);
+          
+          // Wait for boarding time, then start journey to destination
+          setTimeout(async () => {
+            setBusStatus('departed');
+            setJourneyStarted(true);
+            setBusAtUserLocation(false);
+            
+            // Get or estimate MG Road coordinates
+            const mgRoadCoords = { lat: 12.9752, lng: 77.6095 }; // Approximate coordinates
+            
+            // Get a route from user's location to destination
+            const destinationRoute = await fetchRouteFromOSRM(currentLocation, mgRoadCoords);
+            
+            if (!destinationRoute || destinationRoute.length === 0) {
+              console.error("Failed to get destination route");
+              return;
+            }
+            
+            // Send journey started notification
+            sendJourneyStartedNotification(busData.route, userLocationName, destinationName);
+            
+            // Animate bus along destination route
+            let destStep = 0;
+            const journeyInterval = setInterval(() => {
+              if (destStep >= destinationRoute.length - 1) {
+                clearInterval(journeyInterval);
+                
+                // Notify arrival at destination
+                toast({
+                  title: "🚌 Destination Reached",
+                  description: `Bus ${busData.route} has arrived at ${destinationName}.`,
+                });
+                
+                return;
+              }
+              
+              // Move bus along route
+              const position = destinationRoute[destStep];
+              setBusLocation({ lat: position[0], lng: position[1] });
+              
+              // Update speed based on segment (slower in congested areas, faster on highways)
+              setCurrentSpeed(Math.floor(Math.random() * 30 + 15));
+              
+              destStep++;
+            }, 1500);
+            
+          }, 10000); // 10 seconds wait at user location
+          
+          return;
+        }
+        
+        // Move bus along approach route
+        const position = approachRoute[currentStep];
+        setBusLocation({ lat: position[0], lng: position[1] });
+        
+        // Update speed (slower as it approaches the stop)
+        const progressRatio = currentStep / approachRoute.length;
+        const slowingSpeed = Math.max(5, Math.floor((1 - progressRatio) * 40));
+        setCurrentSpeed(slowingSpeed);
+        
+        currentStep++;
+      }, 1000);
+    };
+    
+    // Start the journey simulation
+    simulateJourney();
+    
+  }, [busData, currentLocation, userLocationName, destinationName, nearbyStartPoint]);
 
   if (!busData) {
     return (
@@ -102,12 +384,17 @@ export function TrackSection({ busData }: TrackSectionProps) {
             <div>
               <CardTitle className="text-xl font-bold">{busData.route}</CardTitle>
               <p className="text-orange-100 text-sm">
-                From: {busData.from} → To: {busData.to}
+                From: {userLocationName} → To: {destinationName}
               </p>
             </div>
             <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-sm">Live Tracking</span>
+              <div className={`w-2 h-2 ${busStatus === 'arrived' ? 'bg-green-400' : 'bg-orange-400'} rounded-full animate-pulse`}></div>
+              <span className="text-sm">
+                {busStatus === 'approaching' && 'Approaching'}
+                {busStatus === 'arrived' && 'Bus at Stop'}
+                {busStatus === 'departed' && 'On Route'}
+                {busStatus === 'en-route' && 'Live Tracking'}
+              </span>
             </div>
           </div>
         </CardHeader>
@@ -118,7 +405,7 @@ export function TrackSection({ busData }: TrackSectionProps) {
                 <MapPin className="w-5 h-5 text-orange-500" />
                 <div>
                   <p className="font-semibold text-gray-900">
-                    {busData.from} → {busData.to}
+                    {userLocationName} → {destinationName}
                   </p>
                   <p className="text-sm text-gray-600">Route Information</p>
                 </div>
@@ -126,6 +413,13 @@ export function TrackSection({ busData }: TrackSectionProps) {
               <div className="flex items-center space-x-3">
                 <Badge className={getBusTypeColor("default")}>{getBusCategory(busData.route)}</Badge>
               </div>
+              {busAtUserLocation && (
+                <div className="bg-green-100 border border-green-300 rounded-md p-3 animate-pulse">
+                  <p className="text-green-800 font-medium flex items-center">
+                    <Bus className="w-4 h-4 mr-2" /> Bus at your location - Boarding now
+                  </p>
+                </div>
+              )}
             </div>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -134,8 +428,12 @@ export function TrackSection({ busData }: TrackSectionProps) {
                   <div className="text-xs text-gray-600">Current Speed</div>
                 </div>
                 <div className="text-center p-3 bg-orange-50 rounded-lg border border-orange-200">
-                  <div className="text-lg font-bold text-orange-600">{estimatedTime}</div>
-                  <div className="text-xs text-gray-600">Estimated Time</div>
+                  <div className="text-lg font-bold text-orange-600">
+                    {busStatus === 'arrived' ? '0 mins' : estimatedTime}
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    {busStatus === 'arrived' ? 'Waiting Time' : 'Estimated Time'}
+                  </div>
                 </div>
               </div>
             </div>
@@ -152,8 +450,35 @@ export function TrackSection({ busData }: TrackSectionProps) {
         </CardHeader>
         <CardContent className="p-0">
           <div className="h-80">
-            <MapView trackingBus={busData} showNearbyBuses={false} />
+            <MapView 
+              trackingBus={{...busData, from: userLocationName, to: destinationName, status: busStatus}} 
+              showNearbyBuses={false} 
+            />
           </div>
+          {busStatus === 'approaching' && (
+            <div className="bg-orange-100 p-3 border-t border-orange-200">
+              <p className="text-sm text-orange-800 flex items-center">
+                <Bus className="w-4 h-4 mr-2" /> 
+                Bus is approaching your location at {userLocationName}
+              </p>
+            </div>
+          )}
+          {busStatus === 'arrived' && (
+            <div className="bg-green-100 p-3 border-t border-green-200">
+              <p className="text-sm text-green-800 flex items-center font-medium">
+                <Bus className="w-4 h-4 mr-2" /> 
+                Bus has arrived at your location. Please board now!
+              </p>
+            </div>
+          )}
+          {busStatus === 'departed' && journeyStarted && (
+            <div className="bg-blue-100 p-3 border-t border-blue-200">
+              <p className="text-sm text-blue-800 flex items-center">
+                <Navigation2 className="w-4 h-4 mr-2" /> 
+                Journey in progress: {userLocationName} → {destinationName}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

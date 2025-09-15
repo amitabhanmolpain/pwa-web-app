@@ -1,4 +1,4 @@
-"use client"
+{/*"use client"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Bus, Car, Bike } from "lucide-react"
@@ -54,4 +54,4 @@ export function TransportOptions() {
       </div>
     </div>
   )
-}
+} */}

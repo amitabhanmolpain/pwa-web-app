@@ -103,7 +103,7 @@ export function SignupForm() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          // In real OAuth, these would come from Google's response
+         
           provider: 'google'
         }),
       })
@@ -112,7 +112,7 @@ export function SignupForm() {
         throw new Error('Google signup failed')
       }
 
-      // For backwards compatibility during transition
+      
       localStorage.setItem(
         "user",
         JSON.stringify({
@@ -167,7 +167,7 @@ export function SignupForm() {
             </div>
           </div>
 
-          {/* Email Field */}
+          
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-900 mb-2">
               Email Address
@@ -186,7 +186,7 @@ export function SignupForm() {
             </div>
           </div>
 
-          {/* Phone Field */}
+          
           <div>
             <label htmlFor="phone" className="block text-sm font-medium text-gray-900 mb-2">
               Phone Number
@@ -205,7 +205,7 @@ export function SignupForm() {
             </div>
           </div>
 
-          {/* Password Field */}
+          
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-900 mb-2">
               Password
@@ -266,7 +266,7 @@ export function SignupForm() {
             Create Account
           </Button>
 
-          {/* Divider */}
+          
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-200" />
@@ -276,7 +276,7 @@ export function SignupForm() {
             </div>
           </div>
 
-          {/* Google Sign Up */}
+          
           <Button
             type="button"
             variant="outline"
@@ -304,7 +304,7 @@ export function SignupForm() {
             Continue with Google
           </Button>
 
-          {/* Sign In Link */}
+          
           <div className="text-center text-sm">
             <span className="text-gray-600">Already have an account? </span>
             <Link href="/login" className="text-orange-500 hover:text-orange-600 font-medium transition-colors">

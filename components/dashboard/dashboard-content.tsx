@@ -189,25 +189,11 @@ export function DashboardContent() {
           {activeTab === "home" && (
             <div className="space-y-0">
               <div className="relative">
-                <MapView showNearbyBuses={true} />
-                <div className="absolute top-4 left-4">
-                  <Button
-                    onClick={handleSOSClick}
-                    size="sm"
-                    className="bg-red-500 hover:bg-red-600 text-white rounded-full p-3 shadow-lg"
-                  >
-                    <AlertTriangle className="w-5 h-5" />
-                  </Button>
-                </div>
-                <div className="absolute top-4 right-4">
-                  <Button
-                    onClick={handleNotificationClick}
-                    size="sm"
-                    className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-3 shadow-lg"
-                  >
-                    <Bell className="w-5 h-5" />
-                  </Button>
-                </div>
+                <MapView 
+                  showNearbyBuses={true} 
+                  onSOSClick={handleSOSClick}
+                  onNotificationClick={handleNotificationClick}
+                />
               </div>
 
               <div className="px-4 lg:px-6 space-y-6 pt-6">

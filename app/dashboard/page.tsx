@@ -3,8 +3,8 @@ import { DashboardContent } from "@/components/dashboard/dashboard-content"
 
 export default function DashboardPage() {
   return (
-    <AuthGuard>
+    //<AuthGuard>
       <DashboardContent />
-    </AuthGuard>
+    //</AuthGuard>
   )
 }
