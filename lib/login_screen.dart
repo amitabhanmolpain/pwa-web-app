@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'language_selection_screen.dart';
 import 'ForgotPasswordScreen.dart';
 import 'SignUpScreen.dart';
-
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,12 +17,231 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  bool _isLoading = false;
+
+  // API endpoints - update with your actual Spring Boot backend URLs
+  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
+  static const String LOGIN_ENDPOINT = '$BASE_URL/auth/login';
+  static const String REFRESH_TOKEN_ENDPOINT = '$BASE_URL/auth/refresh';
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  // Function to handle login process
+  Future<void> _handleLogin() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+      });
+
+      try {
+        final loginSuccess = await _authenticateUser(
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
+        );
+
+        if (loginSuccess) {
+          // Navigate to Language Selection Screen on successful login
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const LanguageSelectionScreen(),
+            ),
+          );
+        } else {
+          _showErrorDialog('Login Failed', 'Invalid email or password');
+        }
+      } catch (e) {
+        _showErrorDialog('Login Error', 'A Backend error occurred: ');
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // JWT Authentication with Spring Boot backend
+  Future<bool> _authenticateUser(String email, String password) async {
+    try {
+      final response = await http.post(
+        Uri.parse(LOGIN_ENDPOINT),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode({
+          'email': email,
+          'password': password,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        // Parse the response
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        
+        // Extract tokens from response
+        final String accessToken = responseData['accessToken'];
+        final String refreshToken = responseData['refreshToken'];
+        final int expiresIn = responseData['expiresIn'] ?? 3600; // Default 1 hour
+        
+        // Store tokens securely
+        await _storeTokens(accessToken, refreshToken, expiresIn);
+        
+        // Store user info if available
+        if (responseData.containsKey('user')) {
+          await _storeUserInfo(responseData['user']);
+        }
+        
+        return true;
+      } else if (response.statusCode == 401) {
+        throw Exception('Invalid credentials');
+      } else if (response.statusCode == 403) {
+        throw Exception('Account not verified or disabled');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Store JWT tokens securely
+  Future<void> _storeTokens(String accessToken, String refreshToken, int expiresIn) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('access_token', accessToken);
+    await prefs.setString('refresh_token', refreshToken);
+    await prefs.setInt('token_expiry', DateTime.now().millisecondsSinceEpoch + (expiresIn * 1000));
+  }
+
+  // Store user information
+  Future<void> _storeUserInfo(Map<String, dynamic> userInfo) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_email', userInfo['email'] ?? '');
+    await prefs.setString('user_name', userInfo['name'] ?? '');
+    await prefs.setString('user_id', userInfo['id']?.toString() ?? '');
+    await prefs.setString('user_role', userInfo['role'] ?? 'driver');
+  }
+
+  // Function to refresh JWT token
+  Future<String?> refreshToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final refreshToken = prefs.getString('refresh_token');
+      
+      if (refreshToken == null) {
+        return null;
+      }
+
+      final response = await http.post(
+        Uri.parse(REFRESH_TOKEN_ENDPOINT),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $refreshToken',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        final String newAccessToken = responseData['accessToken'];
+        final int expiresIn = responseData['expiresIn'] ?? 3600;
+        
+        await prefs.setString('access_token', newAccessToken);
+        await prefs.setInt('token_expiry', DateTime.now().millisecondsSinceEpoch + (expiresIn * 1000));
+        
+        return newAccessToken;
+      } else {
+        // Refresh token failed, user needs to login again
+        await _clearStoredData();
+        return null;
+      }
+    } catch (e) {
+      await _clearStoredData();
+      return null;
+    }
+  }
+
+  // Clear stored authentication data
+  Future<void> _clearStoredData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('access_token');
+    await prefs.remove('refresh_token');
+    await prefs.remove('token_expiry');
+    await prefs.remove('user_email');
+    await prefs.remove('user_name');
+    await prefs.remove('user_id');
+    await prefs.remove('user_role');
+  }
+
+  // Check if user is already logged in (for auto-login)
+  Future<bool> checkExistingLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final accessToken = prefs.getString('access_token');
+    final tokenExpiry = prefs.getInt('token_expiry');
+    
+    if (accessToken == null || tokenExpiry == null) {
+      return false;
+    }
+    
+    // Check if token is expired
+    if (DateTime.now().millisecondsSinceEpoch >= tokenExpiry) {
+      // Try to refresh token
+      final newToken = await refreshToken();
+      return newToken != null;
+    }
+    
+    return true;
+  }
+
+  // Function to show error dialog
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Function to handle forgot password
+  void _handleForgotPassword() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
+    );
+  }
+
+  // Function to handle sign up navigation
+  void _handleSignUp() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SignUpScreen()),
+    );
+  }
+
+  // Function to skip to language screen (for testing)
+  void _skipToLanguageScreen() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const LanguageSelectionScreen(),
+      ),
+    );
   }
 
   @override
@@ -194,17 +415,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () {
-                            if (_formKey.currentState!.validate()) {
-                              // Navigate to Language Selection Screen
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const LanguageSelectionScreen(),
-                                ),
-                              );
-                            }
-                          },
+                          onPressed: _isLoading ? null : _handleLogin,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
                             foregroundColor: const Color(0xFF6366F1),
@@ -214,36 +425,40 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             elevation: 0,
                           ),
-                          child: const Text(
-                            'Sign In',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Color(0xFF6366F1)),
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text(
+                                  'Sign In',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 24),
                       
                       // Forgot Password
                       Center(
-                              child: TextButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
-                                  );
-                                },
-                                child: Text(
-                                  'Forgot Password?',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.8),
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
+                        child: TextButton(
+                          onPressed: _handleForgotPassword,
+                          child: Text(
+                            'Forgot Password?',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.8),
+                              fontSize: 16,
                             ),
-
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -275,14 +490,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       ElevatedButton(
-                        onPressed: () {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const LanguageSelectionScreen(),
-                            ),
-                          );
-                        },
+                        onPressed: _skipToLanguageScreen,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white.withOpacity(0.2),
                           foregroundColor: Colors.white,
@@ -310,29 +518,23 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (context) => const SignUpScreen()),
-                                );
-                              },
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: const Text(
-                                'Sign Up',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  decoration: TextDecoration.underline,
-                                  decorationColor: Colors.white,
-                                ),
-                              ),
-                            ),
-
+                      onPressed: _handleSignUp,
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Sign Up',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                          decorationColor: Colors.white,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
