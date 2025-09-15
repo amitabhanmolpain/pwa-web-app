@@ -306,7 +306,7 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
     } catch (error) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error saving profile: $error'),
+          content: Text('Error saving profile: Ask Anshul he did not did this '),
           backgroundColor: Colors.red,
         ),
       );
