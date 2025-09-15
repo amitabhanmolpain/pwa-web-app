@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'chat_support_screen.dart';
 
 class SupportCenterScreen extends StatelessWidget {
   const SupportCenterScreen({super.key});
@@ -177,7 +178,11 @@ class SupportCenterScreen extends StatelessWidget {
                 const Spacer(),
                 ElevatedButton(
                   onPressed: () {
-                    Navigator.pushNamed(context, '/chat_support');
+                    // Navigate to ChatSupportScreen
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ChatSupportScreen()),
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,

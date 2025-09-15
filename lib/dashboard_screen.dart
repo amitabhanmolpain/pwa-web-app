@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'theme_notifier.dart';
 import 'setup_profile_personal_screen.dart';
 import 'sos_emergency_screen.dart';
@@ -30,6 +33,19 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   bool _isFabExpanded = false;
   String _selectedQuickAction = '';
+  bool _isLoading = false;
+
+  // Dashboard data
+  Map<String, dynamic> _driverStats = {
+    'todayHours': '6.5h',
+    'distance': '245 km',
+    'earnings': '₹1,850',
+    'activeRoute': {
+      'name': 'Route 42',
+      'nextStop': 'Central Station'
+    },
+    'currentLocation': 'Main Street & 5th Avenue'
+  };
 
   final TextEditingController _searchController = TextEditingController();
   final List<String> _features = [
@@ -41,6 +57,173 @@ class _DashboardScreenState extends State<DashboardScreen>
     'SOS Emergency',
   ];
   List<String> _filteredFeatures = [];
+
+  // API endpoints
+  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
+  static const String DASHBOARD_STATS_ENDPOINT = '$BASE_URL/driver/stats';
+  static const String ACTIVE_ROUTE_ENDPOINT = '$BASE_URL/driver/active-route';
+  static const String START_TRIP_ENDPOINT = '$BASE_URL/trips/start';
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 8))
+          ..repeat(reverse: true);
+    _scaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.15), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.15, end: 1.0), weight: 1),
+    ]).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0),
+      end: const Offset(0.05, 0.05),
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
+    _searchController.addListener(_onSearchChanged);
+    _filteredFeatures = [];
+    
+    // Load dashboard data on init
+    _loadDashboardData();
+  }
+
+  // Load dashboard data from backend
+  Future<void> _loadDashboardData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final accessToken = prefs.getString('access_token');
+      
+      if (accessToken == null) {
+        // If no token, keep default UI values
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Fetch dashboard statistics
+      final statsResponse = await http.get(
+        Uri.parse(DASHBOARD_STATS_ENDPOINT),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (statsResponse.statusCode == 200) {
+        final statsData = json.decode(statsResponse.body);
+        setState(() {
+          _driverStats = {
+            ..._driverStats,
+            'todayHours': '${statsData['todayHours']?.toStringAsFixed(1) ?? '0.0'}h',
+            'distance': '${statsData['todayDistance'] ?? '0'} km',
+            'earnings': '₹${statsData['todayEarnings'] ?? '0'}',
+          };
+        });
+      }
+
+      // Fetch active route
+      final routeResponse = await http.get(
+        Uri.parse(ACTIVE_ROUTE_ENDPOINT),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (routeResponse.statusCode == 200) {
+        final routeData = json.decode(routeResponse.body);
+        if (routeData['hasActiveRoute'] == true) {
+          setState(() {
+            _driverStats['activeRoute'] = routeData['activeRoute'];
+          });
+        } else {
+          setState(() {
+            _driverStats['activeRoute'] = null;
+          });
+        }
+      }
+
+    } catch (e) {
+      // If API call fails, keep the default UI values
+      print('Failed to load dashboard data: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Start a new trip
+  Future<void> _startTrip() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final accessToken = prefs.getString('access_token');
+      
+      if (accessToken == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please login to start a trip'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final response = await http.post(
+        Uri.parse(START_TRIP_ENDPOINT),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'startTime': DateTime.now().toIso8601String(),
+          'vehicleId': 'default',
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Trip started successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Reload dashboard to show active route
+        await _loadDashboardData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to start trip'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start trip: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   void _onTabTapped(int index) {
     setState(() => _selectedIndex = index);
@@ -66,37 +249,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() => _hoverStates[buttonName] = isHovering);
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _animationController =
-        AnimationController(vsync: this, duration: const Duration(seconds: 8))
-          ..repeat(reverse: true);
-    _scaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.15), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 1.15, end: 1.0), weight: 1),
-    ]).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0),
-      end: const Offset(0.05, 0.05),
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
-    _searchController.addListener(_onSearchChanged);
-    _filteredFeatures = [];
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    _searchController.dispose();
-    super.dispose();
-  }
-
   void _onSearchChanged() {
     setState(() {
       final q = _searchController.text.toLowerCase();
@@ -107,8 +259,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   void _onFeatureTap(String feature) {
     if (feature == 'Start Trip') {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Starting trip...')));
+      _startTrip();
     } else if (feature == 'Support') {
       Navigator.push(context,
           MaterialPageRoute(builder: (_) => const SupportCenterScreen()));
@@ -130,14 +281,21 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   @override
+  void dispose() {
+    _animationController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);                                   // theme [9]
-    final isDark = context.watch<ThemeNotifier>().isDarkMode;          // listen Provider [9]
+    final theme = Theme.of(context);
+    final isDark = context.watch<ThemeNotifier>().isDarkMode;
     final cardColor = theme.cardColor;
     final bgColor = theme.scaffoldBackgroundColor;
     final onCard = theme.colorScheme.onSurface.withOpacity(0.7);
 
-    // Compute brand pill colors OUTSIDE children list to avoid errors. [1]
+    // Compute brand pill colors
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color pillBg = dark
         ? theme.colorScheme.surfaceVariant.withOpacity(0.35)
@@ -146,7 +304,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         ? theme.colorScheme.onSurface.withOpacity(0.15)
         : theme.colorScheme.primary.withOpacity(0.25);
     final Color pillForeground =
-        dark ? theme.colorScheme.onSurface : theme.colorScheme.primary; // [10]
+        dark ? theme.colorScheme.onSurface : theme.colorScheme.primary;
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -306,6 +464,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                           ),
                         ),
+                        if (_isLoading)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8.0),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    theme.colorScheme.primary),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -339,106 +510,107 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                   const SizedBox(height: 24),
 
-                  // Active Route card
-                  Container(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+                  // Active Route card (only show if there's an active route)
+                  if (_driverStats['activeRoute'] != null)
+                    Container(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                        border: Border.all(
+                          color: theme.colorScheme.primary.withOpacity(0.08),
+                          width: 1,
                         ),
-                      ],
-                      border: Border.all(
-                        color: theme.colorScheme.primary.withOpacity(0.08),
-                        width: 1,
                       ),
-                    ),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 10,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF22C55E),
-                                shape: BoxShape.circle,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF22C55E),
+                                  shape: BoxShape.circle,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Active Route',
+                                        style: theme.textTheme.labelMedium
+                                            ?.copyWith(color: theme.hintColor)),
+                                    const SizedBox(height: 2),
+                                    Text(_driverStats['activeRoute']['name'] ?? 'Route 42',
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w700)),
+                                  ],
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  Text('Active Route',
+                                  Text('Next Stop',
                                       style: theme.textTheme.labelMedium
                                           ?.copyWith(color: theme.hintColor)),
                                   const SizedBox(height: 2),
-                                  Text('Route 42',
-                                      style: theme.textTheme.titleMedium
+                                  Text(_driverStats['activeRoute']['nextStop'] ?? 'Central Station',
+                                      style: theme.textTheme.bodyMedium
                                           ?.copyWith(
-                                              fontWeight: FontWeight.w700)),
+                                              fontWeight: FontWeight.w600)),
                                 ],
                               ),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text('Next Stop',
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(color: theme.hintColor)),
-                                const SizedBox(height: 2),
-                                Text('Central Station',
-                                    style: theme.textTheme.bodyMedium
-                                        ?.copyWith(
-                                            fontWeight: FontWeight.w600)),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Icon(Icons.place_outlined,
-                                size: 16,
-                                color: theme.hintColor.withOpacity(0.9)),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Current Location',
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(color: theme.hintColor)),
-                                  const SizedBox(height: 2),
-                                  Text('Main Street & 5th Avenue',
-                                      style: theme.textTheme.bodySmall,
-                                      overflow: TextOverflow.ellipsis),
-                                ],
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Icon(Icons.place_outlined,
+                                  size: 16,
+                                  color: theme.hintColor.withOpacity(0.9)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Current Location',
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(color: theme.hintColor)),
+                                    const SizedBox(height: 2),
+                                    Text(_driverStats['currentLocation'],
+                                        style: theme.textTheme.bodySmall,
+                                        overflow: TextOverflow.ellipsis),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 20),
 
                   Row(
                     children: [
                       Expanded(
-                        child: _buildStatCard('Today\'s Hours', '6.5h',
+                        child: _buildStatCard('Today\'s Hours', _driverStats['todayHours'],
                             Colors.green, Icons.access_time),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: _buildStatCard('Distance', '245 km',
+                        child: _buildStatCard('Distance', _driverStats['distance'],
                             theme.colorScheme.primary, Icons.navigation_outlined),
                       ),
                     ],
@@ -451,7 +623,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       const Spacer(),
                       Expanded(
                         flex: 2,
-                        child: _buildStatCard('Earnings', '₹1,850', Colors.purple,
+                        child: _buildStatCard('Earnings', _driverStats['earnings'], Colors.purple,
                             Icons.account_balance_wallet),
                       ),
                       const Spacer(),
@@ -490,14 +662,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     ? theme.colorScheme.primary
                                     : theme.colorScheme.surface,
                                 Icons.navigation,
-                                () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const JourneyPlannerScreen()),
-                                  );
-                                },
+                                _startTrip,
                                 onHover: (h) =>
                                     _setHoverState('Start Trip', h),
                                 isHovered: _hoverStates['Start Trip']!,
