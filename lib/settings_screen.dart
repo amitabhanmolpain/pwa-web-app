@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
 import 'setup_profile_personal_screen.dart';
 import 'language_selection_screen.dart';
 import 'support_center_screen.dart';
@@ -7,6 +11,7 @@ import 'help_faq_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'security_tips_screen.dart';
 import 'theme_notifier.dart';
+import 'login_screen.dart'; // make sure this import points to your LoginScreen
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -17,7 +22,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _notificationsEnabled = true;
-  final bool _biometricEnabled = false;
+
+  final storage = const FlutterSecureStorage();
 
   @override
   Widget build(BuildContext context) {
@@ -290,11 +296,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () {
-                // Implement sign out logic
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Signed out successfully')),
+              onPressed: () async {
+                Navigator.of(context).pop(); // close dialog
+                await storage.deleteAll(); // clear local storage/session
+
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  (Route<dynamic> route) => false,
                 );
               },
               child: const Text('Sign Out'),
@@ -319,12 +327,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () {
-                // Implement account deletion logic
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Account deleted successfully')),
-                );
+              onPressed: () async {
+                Navigator.of(context).pop(); // close dialog
+
+                // Debug: print all keys in storage to find the correct token key
+                Map<String, String> allValues = await storage.readAll();
+                print('Stored keys: ' + allValues.toString());
+                String? token = allValues['auth_token'] ??
+                    allValues['token'] ??
+                    allValues['access_token'];
+                if (token == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text(
+                            'User not logged in (no token found in storage)')),
+                  );
+                  return;
+                }
+
+                try {
+                  var url = Uri.parse('http://localhost:8080/api/user/delete');
+                  var response = await http.delete(
+                    url,
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': 'Bearer $token',
+                    },
+                  );
+
+                  if (response.statusCode == 200) {
+                    await storage.deleteAll(); // clear local session
+
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (Route<dynamic> route) => false,
+                    );
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Account deleted successfully')),
+                    );
+                  } else {
+                    var body = json.decode(response.body);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed: ${body['message']}')),
+                    );
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error: $e')),
+                  );
+                }
               },
               child: const Text(
                 'Delete',

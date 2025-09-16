@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'login_screen.dart';
 import 'language_selection_screen.dart';
 import 'dashboard_screen.dart';
@@ -25,6 +26,11 @@ Future<void> main() async {
   } catch (e) {
     developer.log('Error loading .env file: $e', name: 'Main');
   }
+  // Force logout: clear token on every app launch
+  final storage = FlutterSecureStorage();
+  await storage.delete(key: 'auth_token');
+  await storage.delete(key: 'token');
+  await storage.delete(key: 'access_token');
   runApp(
     ChangeNotifierProvider(
       create: (context) => ThemeNotifier(),
