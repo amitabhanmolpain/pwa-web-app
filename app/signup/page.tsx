@@ -12,7 +12,7 @@ export default function SignupPage() {
               <Bus className="w-8 h-8 text-primary-foreground" />
             </div>
           </div>
-          <h1 className="text-3xl lg:text-4xl font-bold text-foreground mb-2">Join Punjab Bus Tracker</h1>
+          <h1 className="text-3xl lg:text-4xl font-bold text-foreground mb-2">Marg Darshak</h1>
           <p className="text-muted-foreground lg:text-lg">Create your account to start tracking buses</p>
         </div>
         <SignupForm />
