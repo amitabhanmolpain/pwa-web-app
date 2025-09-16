@@ -330,7 +330,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     // Compute brand pill colors
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color pillBg = dark
-        ? theme.colorScheme.surfaceVariant.withOpacity(0.35)
+        ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.35)
         : theme.colorScheme.primary.withOpacity(0.18);
     final Color pillBorder = dark
         ? theme.colorScheme.onSurface.withOpacity(0.15)

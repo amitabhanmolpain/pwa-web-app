@@ -308,7 +308,7 @@ class _SetupProfileVehicleScreenState extends State<SetupProfileVehicleScreen> {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: _selectedFuelType,
+                      initialValue: _selectedFuelType,
                       decoration: InputDecoration(
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),

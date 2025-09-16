@@ -16,7 +16,7 @@ class _BusScheduleScreenState extends State<BusScheduleScreen>
   int _selectedView = 0; // 0: Day, 1: Week, 2: Month
   int _selectedRouteType = 0; // 0: City to City, 1: City to Village, 2: Intercity
   bool _isLoading = true;
-  String _errorMessage = '';
+  final String _errorMessage = '';
 
   // Calendar/Date variables
   DateTime _focusedDay = DateTime.now();
@@ -28,14 +28,14 @@ class _BusScheduleScreenState extends State<BusScheduleScreen>
 
   // Sample data
   List<Map<String, dynamic>> _cityToCityRoutes = [];
-  List<Map<String, dynamic>> _cityToVillageRoutes = [];
-  List<Map<String, dynamic>> _intercityRoutes = [];
+  final List<Map<String, dynamic>> _cityToVillageRoutes = [];
+  final List<Map<String, dynamic>> _intercityRoutes = [];
 
   // Week view data structure
-  Map<DateTime, List<Map<String, dynamic>>> _weeklySchedules = {};
+  final Map<DateTime, List<Map<String, dynamic>>> _weeklySchedules = {};
   
   // Month view data structure
-  Map<DateTime, List<Map<String, dynamic>>> _monthlySchedules = {};
+  final Map<DateTime, List<Map<String, dynamic>>> _monthlySchedules = {};
 
   @override
   void initState() {

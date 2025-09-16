@@ -196,7 +196,7 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                                           Container(
                                             width: 24,
                                             height: 24,
-                                            decoration: BoxDecoration(
+                                            decoration: const BoxDecoration(
                                               color: Colors.white,
                                               shape: BoxShape.circle,
                                             ),

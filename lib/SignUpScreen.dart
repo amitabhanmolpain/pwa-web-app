@@ -22,7 +22,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _obscureConfirmPassword = true;
 
   // API endpoints - update with your actual Spring Boot backend URLs
-  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
+  static const String BASE_URL = 'http://localhost:8080/api';
   static const String SIGNUP_ENDPOINT = '$BASE_URL/auth/register';
   static const String VERIFY_EMAIL_ENDPOINT = '$BASE_URL/auth/verify-email';
 
@@ -66,7 +66,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
             'email': _emailController.text.trim(),
             'password': _passwordController.text.trim(),
             'phoneNumber': _phoneController.text.trim(),
-            'licenseNumber': _licenseController.text.trim(),
             'role': 'DRIVER', // Assuming driver role for this app
           }),
         );
@@ -122,7 +121,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       } catch (e) {
         // Network or other errors
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Network error: Backend Error due to Anshul'),
             backgroundColor: Colors.red,
           ),

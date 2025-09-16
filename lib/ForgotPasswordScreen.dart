@@ -198,7 +198,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                 ] else ...[
                   // Success message after email is sent
-                  Icon(
+                  const Icon(
                     Icons.check_circle_outline,
                     color: Colors.white,
                     size: 64,
