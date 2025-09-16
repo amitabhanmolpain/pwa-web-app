@@ -17,7 +17,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _notificationsEnabled = true;
-  bool _biometricEnabled = false;
+  final bool _biometricEnabled = false;
 
   @override
   Widget build(BuildContext context) {

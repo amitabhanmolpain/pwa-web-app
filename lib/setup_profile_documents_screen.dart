@@ -17,7 +17,7 @@ class _SetupProfileDocumentsScreenState extends State<SetupProfileDocumentsScree
   final ImagePicker _imagePicker = ImagePicker();
   bool _isLoading = false;
   bool _isSaving = false;
-  Map<String, File?> _selectedDocuments = {
+  final Map<String, File?> _selectedDocuments = {
     'drivingLicense': null,
     'vehicleRegistration': null,
     'insuranceCertificate': null,

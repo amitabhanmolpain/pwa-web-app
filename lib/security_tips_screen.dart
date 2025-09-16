@@ -91,11 +91,11 @@ class SecurityTipsScreen extends StatelessWidget {
             Card(
               elevation: 2,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
+              child: const Padding(
+                padding: EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
+                  children: [
                     Text(
                       'Quick Advice',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
