@@ -48,6 +48,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     'currentLocation': 'Main Street & 5th Avenue'
   };
 
+  // Crowd level state
+  String _crowdLevel = 'Medium';
+  final List<String> _crowdLevels = ['Low', 'Medium', 'High'];
+
   final TextEditingController _searchController = TextEditingController();
   final List<String> _features = [
     'Start Trip',
@@ -64,6 +68,33 @@ class _DashboardScreenState extends State<DashboardScreen>
   static const String DASHBOARD_STATS_ENDPOINT = '$BASE_URL/driver/stats';
   static const String ACTIVE_ROUTE_ENDPOINT = '$BASE_URL/driver/active-route';
   static const String START_TRIP_ENDPOINT = '$BASE_URL/trips/start';
+
+  // Helper methods for crowd level
+  Color _getCrowdLevelColor() {
+    switch (_crowdLevel) {
+      case 'Low':
+        return Colors.green;
+      case 'Medium':
+        return Colors.orange;
+      case 'High':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getCrowdLevelIcon() {
+    switch (_crowdLevel) {
+      case 'Low':
+        return Icons.people_outline;
+      case 'Medium':
+        return Icons.people;
+      case 'High':
+        return Icons.people_alt;
+      default:
+        return Icons.people_outline;
+    }
+  }
 
   @override
   void initState() {
@@ -601,6 +632,68 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ],
                       ),
                     ),
+                  const SizedBox(height: 20),
+
+                  // ADD: Crowd Level Toggle Section
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Icon(_getCrowdLevelIcon(),
+                          size: 16,
+                          color: _getCrowdLevelColor()),
+                      const SizedBox(width: 6),
+                      Text('Crowd Level',
+                          style: theme.textTheme.labelSmall
+                              ?.copyWith(color: theme.hintColor)),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _getCrowdLevelColor().withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: _getCrowdLevelColor().withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: _crowdLevels.map((level) {
+                            final isSelected = level == _crowdLevel;
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _crowdLevel = level;
+                                });
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: isSelected 
+                                      ? _getCrowdLevelColor() 
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  level,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: isSelected 
+                                        ? Colors.white 
+                                        : _getCrowdLevelColor(),
+                                    fontWeight: isSelected 
+                                        ? FontWeight.w600 
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 20),
 
                   Row(
