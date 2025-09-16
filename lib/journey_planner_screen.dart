@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const JourneyPlannerApp());
@@ -41,36 +38,44 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen>
   // Text editing controllers for search fields
   final TextEditingController _startPointController = TextEditingController();
   final TextEditingController _endPointController = TextEditingController();
+  final TextEditingController _switchingPointController =
+      TextEditingController();
 
   // Focus nodes for search fields
   final FocusNode _startPointFocus = FocusNode();
   final FocusNode _endPointFocus = FocusNode();
+  final FocusNode _switchingPointFocus = FocusNode();
 
-  // API endpoints
-  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
-  static const String PLAN_ROUTE_ENDPOINT = '$BASE_URL/routes/plan';
-  static const String ROUTE_DETAILS_ENDPOINT = '$BASE_URL/routes';
-  static const String UPCOMING_STOPS_ENDPOINT = '$BASE_URL/routes/stops';
+  // Route type selection
+  int _selectedRouteType =
+      0; // 0: City to City, 1: City to Village, 2: Intercity
 
-  // Route data
-  String routeName = "Route Planning";
-  String currentLocation = "Enter starting point";
-  String destination = "Enter destination";
-  String routeId = "";
+  // Mock data - would typically come from API calls
+  final String routeName = "Route 15A - City Center";
+  String currentLocation = "Central Mall Bus Stop";
+  String destination = "Railway Station Terminal";
+  String switchingPoint = "City Center Bus Terminal";
+
+  final List<UpcomingStop> upcomingStops = [
+    UpcomingStop(name: "Market Square", time: "2 min"),
+    UpcomingStop(name: "City Hospital", time: "5 min"),
+    UpcomingStop(name: "Railway Station", time: "12 min"),
+  ];
+
+  // Track if user has started a trip
   bool _tripStarted = false;
-  bool _isLoading = false;
-  List<UpcomingStop> upcomingStops = [];
+  bool _showSwitchingPoint = false;
 
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize animation controller
     _tripButtonAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
-    
+
     _buttonScaleAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
       CurvedAnimation(
         parent: _tripButtonAnimationController,
@@ -80,7 +85,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen>
 
     // Start button pulsing animation
     _tripButtonAnimationController.repeat(reverse: true);
-    
+
     // Auto-focus on the starting point field
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FocusScope.of(context).requestFocus(_startPointFocus);
@@ -92,14 +97,18 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen>
     _tripButtonAnimationController.dispose();
     _startPointController.dispose();
     _endPointController.dispose();
+    _switchingPointController.dispose();
     _startPointFocus.dispose();
     _endPointFocus.dispose();
+    _switchingPointFocus.dispose();
     super.dispose();
   }
 
-  // Function to handle start trip button tap with API call
-  Future<void> _handleStartTrip() async {
-    if (_startPointController.text.isEmpty || _endPointController.text.isEmpty) {
+  // Function to handle start trip button tap
+  void _handleStartTrip() {
+    if (_startPointController.text.isEmpty ||
+        _endPointController.text.isEmpty) {
+      // Show error if fields are empty
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Please enter both starting point and destination"),
@@ -108,176 +117,116 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen>
       );
       return;
     }
-    
+
     // Stop the pulsing animation
     _tripButtonAnimationController.stop();
-    
-    setState(() {
-      _isLoading = true;
-    });
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
-      
-      if (accessToken == null) {
-        throw Exception('Not authenticated. Please login again.');
-      }
+    // Animate button press
+    _tripButtonAnimationController.forward().then((_) {
+      _tripButtonAnimationController.reverse();
 
-      // Call API to plan route
-      final response = await http.post(
-        Uri.parse(PLAN_ROUTE_ENDPOINT),
-        headers: {
-          'Authorization': 'Bearer $accessToken',
-          'Content-Type': 'application/json',
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text("Planning your route..."),
+              ],
+            ),
+          );
         },
-        body: json.encode({
-          'startLocation': _startPointController.text.trim(),
-          'endLocation': _endPointController.text.trim(),
-          'vehicleId': 'default', // You might want to get this from user profile
-          'driverId': prefs.getString('user_id'),
-        }),
       );
 
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        
+      // Simulate API call delay
+      Future.delayed(const Duration(seconds: 2), () {
+        Navigator.of(context).pop(); // Close loading dialog
+
+        // Update with new route data (simulated)
         setState(() {
-          routeId = responseData['routeId'];
-          routeName = responseData['routeName'] ?? 'Planned Route';
           currentLocation = _startPointController.text;
           destination = _endPointController.text;
+          if (_showSwitchingPoint && _switchingPointController.text.isNotEmpty) {
+            switchingPoint = _switchingPointController.text;
+          }
           _tripStarted = true;
         });
 
-        // Fetch route details and upcoming stops
-        await _fetchRouteDetails();
-        await _fetchUpcomingStops();
-
+        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(responseData['message'] ?? 'Trip started successfully!'),
+          const SnackBar(
+            content: Text("Trip started successfully!"),
             backgroundColor: Colors.green,
           ),
         );
-      } else if (response.statusCode == 401) {
-        // Token expired, try to refresh
-        final newToken = await _refreshToken();
-        if (newToken != null) {
-          await _handleStartTrip(); // Retry with new token
-          return;
-        } else {
-          throw Exception('Session expired. Please login again.');
-        }
-      } else {
-        throw Exception('Failed to plan route: ${response.statusCode}');
-      }
-    } catch (e) {
+      });
+    });
+  }
+
+  void _showSwitchingPointOnMap() {
+    if (_switchingPointController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
+        const SnackBar(
+          content: Text("Please enter a switching point first"),
           backgroundColor: Colors.red,
         ),
       );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-      _tripButtonAnimationController.repeat(reverse: true);
+      return;
     }
-  }
 
-  // Fetch route details from backend
-  Future<void> _fetchRouteDetails() async {
-    if (routeId.isEmpty) return;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
-      
-      final response = await http.get(
-        Uri.parse('$ROUTE_DETAILS_ENDPOINT/$routeId'),
-        headers: {
-          'Authorization': 'Bearer $accessToken',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final routeData = json.decode(response.body);
-        setState(() {
-          routeName = routeData['name'] ?? routeName;
-          // You can update other route details here
-        });
-      }
-    } catch (e) {
-      print('Error fetching route details: $e');
-    }
-  }
-
-  // Fetch upcoming stops from backend
-  Future<void> _fetchUpcomingStops() async {
-    if (routeId.isEmpty) return;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
-      
-      final response = await http.get(
-        Uri.parse('$UPCOMING_STOPS_ENDPOINT/$routeId/upcoming'),
-        headers: {
-          'Authorization': 'Bearer $accessToken',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final stopsData = json.decode(response.body);
-        final List<dynamic> stopsList = stopsData['stops'] ?? [];
-        
-        setState(() {
-          upcomingStops = stopsList.map((stop) {
-            return UpcomingStop(
-              name: stop['name'] ?? 'Unknown Stop',
-              sequence: stop['sequence'] ?? 0,
-              stopId: stop['stopId'] ?? '',
-            );
-          }).toList();
-        });
-      }
-    } catch (e) {
-      print('Error fetching upcoming stops: $e');
-      // Fallback to empty list
-      setState(() {
-        upcomingStops = [];
-      });
-    }
-  }
-
-  // Refresh JWT token
-  Future<String?> _refreshToken() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final refreshToken = prefs.getString('refresh_token');
-      
-      if (refreshToken == null) return null;
-
-      final response = await http.post(
-        Uri.parse('$BASE_URL/auth/refresh'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $refreshToken',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        final newAccessToken = responseData['accessToken'];
-        await prefs.setString('access_token', newAccessToken);
-        return newAccessToken;
-      }
-    } catch (e) {
-      print('Token refresh failed: $e');
-    }
-    return null;
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Switching Point Location"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _switchingPointController.text,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                height: 200,
+                color: Colors.grey[300],
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.map, size: 50, color: Colors.grey),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Location of ${_switchingPointController.text}",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text("OK"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -289,198 +238,262 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen>
         elevation: 0,
         systemOverlayStyle: SystemUiOverlayStyle.light,
       ),
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Search fields (always shown at the top)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Search fields (always shown at the top)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _startPointController,
+                    focusNode: _startPointFocus,
+                    style: const TextStyle(color: Colors.black), // ✅ added
+                    decoration: InputDecoration(
+                      labelText: 'Starting Point',
+                      labelStyle:
+                          const TextStyle(color: Colors.black), 
+                      prefixIcon:
+                          const Icon(Icons.my_location, color: Colors.blue),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _endPointController,
+                    focusNode: _endPointFocus,
+                    style: const TextStyle(color: Colors.black), 
+                    decoration: InputDecoration(
+                      labelText: 'Destination',
+                      labelStyle:
+                          const TextStyle(color: Colors.black), 
+                      prefixIcon:
+                          const Icon(Icons.location_on, color: Colors.blue),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                    ),
+                  ),
+
+                  // Switching Point Section
+                  const SizedBox(height: 16),
+                  Row(
                     children: [
-                      TextField(
-                        controller: _startPointController,
-                        focusNode: _startPointFocus,
-                        decoration: InputDecoration(
-                          labelText: 'Starting Point',
-                          prefixIcon: const Icon(Icons.my_location, color: Colors.blue),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[100],
+                      Checkbox(
+                        value: _showSwitchingPoint,
+                        onChanged: (value) {
+                          setState(() {
+                            _showSwitchingPoint = value ?? false;
+                          });
+                        },
+                      ),
+                      const Text('Add Switching Point'),
+                      const Spacer(),
+                      if (_showSwitchingPoint)
+                        IconButton(
+                          icon: const Icon(Icons.map, color: Colors.blue),
+                          onPressed: _showSwitchingPointOnMap,
+                        ),
+                    ],
+                  ),
+                  if (_showSwitchingPoint) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _switchingPointController,
+                      focusNode: _switchingPointFocus,
+                      style: const TextStyle(color: Colors.black), 
+                      decoration: InputDecoration(
+                        labelText: 'Switching Point',
+                        labelStyle:
+                            const TextStyle(color: Colors.black), 
+                        prefixIcon: const Icon(
+                          Icons.transfer_within_a_station,
+                          color: Colors.blue,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                      ),
+                    ),
+                  ],
+
+                  // Route Type Selection
+                  const SizedBox(height: 16),
+                  const Text(
+                    "Route Type",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildRouteTypeOption(
+                          Icons.location_city, "City to City", 0),
+                      _buildRouteTypeOption(
+                          Icons.park, "City to Village", 1),
+                      _buildRouteTypeOption(
+                          Icons.directions_bus, "Intercity", 2),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+                  ScaleTransition(
+                    scale: _buttonScaleAnimation,
+                    child: ElevatedButton(
+                      onPressed: _handleStartTrip,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue[700],
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 32, vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _endPointController,
-                        focusNode: _endPointFocus,
-                        decoration: InputDecoration(
-                          labelText: 'Destination',
-                          prefixIcon: const Icon(Icons.location_on, color: Colors.blue),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[100],
+                      child: const Text(
+                        'Start Trip',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Only show route details after trip has been started
+            if (_tripStarted) ...[
+              // Route information section
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                color: const Color.fromARGB(255, 25, 173, 210),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      routeName,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildLocationRow(Icons.my_location, currentLocation),
+                    const SizedBox(height: 8),
+                    if (_showSwitchingPoint && switchingPoint.isNotEmpty) ...[
+                      _buildLocationRow(
+                          Icons.transfer_within_a_station, switchingPoint),
+                      const SizedBox(height: 8),
+                    ],
+                    _buildLocationRow(Icons.location_on, destination),
+                  ],
+                ),
+              ),
+
+              // Map view section
+              Container(
+                height: 200,
+                color: Colors.grey[300],
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.map, size: 50, color: Colors.grey),
+                      const SizedBox(height: 8),
+                      const Text(
+                        "Map View",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      ScaleTransition(
-                        scale: _buttonScaleAnimation,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _handleStartTrip,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue[700],
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 32, vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text(
-                                  'Start Trip',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Integration Required",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
                         ),
                       ),
                     ],
                   ),
                 ),
-                
-                // Only show route details after trip has been started
-                if (_tripStarted) ...[
-                  // Route information section
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    color: Colors.blue[700],
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          routeName,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildLocationRow(Icons.my_location, currentLocation),
-                        const SizedBox(height: 8),
-                        _buildLocationRow(Icons.location_on, destination),
-                      ],
-                    ),
-                  ),
-                  
-                  // Map view section
-                  Container(
-                    height: 200,
-                    color: Colors.grey[300],
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.map, size: 50, color: Colors.grey),
-                          const SizedBox(height: 8),
-                          const Text(
-                            "Map View",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            "Route ID: $routeId",
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  
-                  // Upcoming stops section
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "Upcoming Stops",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (upcomingStops.isEmpty)
-                          const Center(
-                            child: Text(
-                              "No stops available for this route",
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontStyle: FontStyle.italic,
-                              ),
-                            ),
-                          )
-                        else
-                          ListView.builder(
-                            physics: const NeverScrollableScrollPhysics(),
-                            shrinkWrap: true,
-                            itemCount: upcomingStops.length,
-                            itemBuilder: (context, index) {
-                              return _buildStopItem(upcomingStops[index], index + 1);
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                ] else ...[
-                  // Show prompt to start a trip
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(
-                      child: Text(
-                        "Enter your starting point and destination to plan your journey",
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          
-          // Loading overlay
-          if (_isLoading)
-            Container(
-              color: Colors.black.withOpacity(0.3),
-              child: const Center(
-                child: CircularProgressIndicator(),
               ),
-            ),
+
+              // Upcoming stops section
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Upcoming Stops",
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                    ListView.builder(
+                      physics: const NeverScrollableScrollPhysics(),
+                      shrinkWrap: true,
+                      itemCount: upcomingStops.length,
+                      itemBuilder: (context, index) {
+                        return _buildStopItem(upcomingStops[index]);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              // Show prompt to start a trip
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(
+                  child: Text(
+                    "Enter your starting point and destination to plan your journey",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRouteTypeOption(IconData icon, String title, int index) {
+    final isSelected = _selectedRouteType == index;
+    return GestureDetector(
+      onTap: () {
+        setState(() => _selectedRouteType = index);
+      },
+      child: Column(
+        children: [
+          Icon(icon,
+              color: isSelected ? Colors.blue : Colors.grey, size: 30),
+          const SizedBox(height: 4),
+          Text(title,
+              style: TextStyle(
+                  fontWeight:
+                      isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? Colors.blue : Colors.grey)),
         ],
       ),
     );
@@ -504,7 +517,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen>
     );
   }
 
-  Widget _buildStopItem(UpcomingStop stop, int sequenceNumber) {
+  Widget _buildStopItem(UpcomingStop stop) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -516,15 +529,8 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen>
               color: Colors.blue[50],
               shape: BoxShape.circle,
             ),
-            child: Center(
-              child: Text(
-                sequenceNumber.toString(),
-                style: const TextStyle(
-                  color: Colors.blue,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
+            child: const Icon(Icons.location_pin,
+                color: Color.fromARGB(255, 33, 201, 243), size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -535,7 +541,14 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen>
               ),
             ),
           ),
-          // Removed estimated time as requested
+          Text(
+            stop.time,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.blue[700],
+            ),
+          ),
         ],
       ),
     );
@@ -545,12 +558,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen>
 // Data model for upcoming stops
 class UpcomingStop {
   final String name;
-  final int sequence;
-  final String stopId;
+  final String time;
 
-  UpcomingStop({
-    required this.name,
-    required this.sequence,
-    required this.stopId,
-  });
+  UpcomingStop({required this.name, required this.time});
 }
