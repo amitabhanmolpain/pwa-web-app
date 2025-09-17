@@ -1,8 +1,11 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'theme_notifier.dart';
 import 'setup_profile_personal_screen.dart';
 import 'sos_emergency_screen.dart';
@@ -10,10 +13,11 @@ import 'trip_history_screen.dart';
 import 'journey_planner_screen.dart';
 import 'settings_screen.dart';
 import 'support_center_screen.dart';
-import 'bus_schedule_screen.dart'; // Added import for BusScheduleScreen
+import 'bus_schedule_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
@@ -28,7 +32,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   final Map<String, bool> _hoverStates = {
     'Start Trip': false,
     'Support': false,
-    'Schedule': false, // Changed from 'Trip History' to 'Schedule'
+    'Schedule': false,
     'Journey Planner': false,
   };
 
@@ -41,10 +45,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     'todayHours': '6.5h',
     'distance': '245 km',
     'earnings': '₹1,850',
-    'activeRoute': {
-      'name': 'Route 42',
-      'nextStop': 'Central Station'
-    },
+    'activeRoute': {'name': 'Route 42', 'nextStop': 'Central Station'},
     'currentLocation': 'Main Street & 5th Avenue'
   };
 
@@ -56,7 +57,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   final List<String> _features = [
     'Start Trip',
     'Support',
-    'Schedule', // Changed from 'Trip History' to 'Schedule'
+    'Schedule',
     'Journey Planner',
     'Setup Profile',
     'SOS Emergency',
@@ -64,37 +65,17 @@ class _DashboardScreenState extends State<DashboardScreen>
   List<String> _filteredFeatures = [];
 
   // API endpoints
-  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
+  static const String BASE_URL = String.fromEnvironment('BASE_URL',
+      defaultValue: 'http://your-spring-boot-server:8080/api');
+  static const String WS_URL = String.fromEnvironment('WS_URL',
+      defaultValue: 'ws://your-server:8080/trip/socket');
   static const String DASHBOARD_STATS_ENDPOINT = '$BASE_URL/driver/stats';
   static const String ACTIVE_ROUTE_ENDPOINT = '$BASE_URL/driver/active-route';
   static const String START_TRIP_ENDPOINT = '$BASE_URL/trips/start';
 
-  // Helper methods for crowd level
-  Color _getCrowdLevelColor() {
-    switch (_crowdLevel) {
-      case 'Low':
-        return Colors.green;
-      case 'Medium':
-        return Colors.orange;
-      case 'High':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  IconData _getCrowdLevelIcon() {
-    switch (_crowdLevel) {
-      case 'Low':
-        return Icons.people_outline;
-      case 'Medium':
-        return Icons.people;
-      case 'High':
-        return Icons.people_alt;
-      default:
-        return Icons.people_outline;
-    }
-  }
+  // WebSocket for live location
+  WebSocketChannel? _wsChannel;
+  Timer? _locationTimer;
 
   @override
   void initState() {
@@ -117,27 +98,35 @@ class _DashboardScreenState extends State<DashboardScreen>
       curve: Curves.easeInOut,
     ));
     _searchController.addListener(_onSearchChanged);
-    _filteredFeatures = [];
-    
-    // Load dashboard data on init
+    _filteredFeatures = _features;
+
     _loadDashboardData();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    _searchController.dispose();
+    _locationTimer?.cancel();
+    _wsChannel?.sink.close();
+    super.dispose();
   }
 
   // Load dashboard data from backend
   Future<void> _loadDashboardData() async {
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
-      
+      final storage = FlutterSecureStorage();
+      final accessToken = await storage.read(key: 'access_token');
+
       if (accessToken == null) {
-        // If no token, keep default UI values
-        setState(() {
-          _isLoading = false;
-        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please login to view dashboard'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
         return;
       }
 
@@ -155,7 +144,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         setState(() {
           _driverStats = {
             ..._driverStats,
-            'todayHours': '${statsData['todayHours']?.toStringAsFixed(1) ?? '0.0'}h',
+            'todayHours':
+                '${(statsData['todayHours'] ?? 0.0).toStringAsFixed(1)}h',
             'distance': '${statsData['todayDistance'] ?? '0'} km',
             'earnings': '₹${statsData['todayEarnings'] ?? '0'}',
           };
@@ -183,27 +173,27 @@ class _DashboardScreenState extends State<DashboardScreen>
           });
         }
       }
-
     } catch (e) {
-      // If API call fails, keep the default UI values
       print('Failed to load dashboard data: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load dashboard: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
-  // Start a new trip
+  // Start a new trip and setup WebSocket for live location sharing
   Future<void> _startTrip() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
-      
+      final storage = FlutterSecureStorage();
+      final accessToken = await storage.read(key: 'access_token');
+
       if (accessToken == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -233,7 +223,36 @@ class _DashboardScreenState extends State<DashboardScreen>
             backgroundColor: Colors.green,
           ),
         );
-        // Reload dashboard to show active route
+
+        // Connect WebSocket
+        _wsChannel = WebSocketChannel.connect(
+          Uri.parse('$WS_URL?token=$accessToken'),
+        );
+
+        _wsChannel!.stream.listen(
+          (message) {
+            print('Received WebSocket message: $message');
+          },
+          onError: (error) => print('WebSocket error: $error'),
+          onDone: () => print('WebSocket disconnected'),
+        );
+
+        // Send periodic location updates
+        _locationTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+          final lat = 12.9716; // Replace with actual location (e.g., from geolocator)
+          final lng = 77.5946;
+          final locationData = {
+            'latitude': lat,
+            'longitude': lng,
+            'timestamp': DateTime.now().toIso8601String(),
+            'driverId': 'default_driver_id', // Replace with actual driver ID
+          };
+
+          // Send to WebSocket (backend stores in Redis)
+          _wsChannel!.sink.add(json.encode(locationData));
+          print('Sent location to WebSocket: ($lat, $lng)');
+        });
+
         await _loadDashboardData();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -244,36 +263,26 @@ class _DashboardScreenState extends State<DashboardScreen>
         );
       }
     } catch (e) {
+      print('Failed to start trip: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to start trip: ${e.toString()}'),
+          content: Text('Failed to start trip: $e'),
           backgroundColor: Colors.red,
         ),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
   void _onTabTapped(int index) {
     setState(() => _selectedIndex = index);
     if (index == 1) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const JourneyPlannerScreen()),
-      );
+      Navigator.pushNamed(context, '/journey_planner');
     } else if (index == 2) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
-      );
+      Navigator.pushNamed(context, '/trip_history');
     } else if (index == 3) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const SetupProfilePersonalScreen()),
-      );
+      Navigator.pushNamed(context, '/setup_profile_personal');
     }
   }
 
@@ -290,33 +299,55 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _onFeatureTap(String feature) {
-    if (feature == 'Start Trip') {
-      _startTrip();
-    } else if (feature == 'Support') {
-      Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const SupportCenterScreen()));
-    } else if (feature == 'Schedule') { // Changed from 'Trip History' to 'Schedule'
-      Navigator.push(
-          context, MaterialPageRoute(builder: (_) => const BusScheduleScreen())); // Updated navigation
-    } else if (feature == 'Journey Planner') {
-      Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const JourneyPlannerScreen()));
-    } else if (feature == 'Setup Profile') {
-      Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const SetupProfilePersonalScreen()));
-    } else if (feature == 'SOS Emergency') {
-      Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const SosEmergencyScreen()));
+    switch (feature) {
+      case 'Start Trip':
+        _startTrip();
+        break;
+      case 'Support':
+        Navigator.pushNamed(context, '/support_center');
+        break;
+      case 'Schedule':
+        Navigator.pushNamed(context, '/bus_schedule');
+        break;
+      case 'Journey Planner':
+        Navigator.pushNamed(context, '/journey_planner');
+        break;
+      case 'Setup Profile':
+        Navigator.pushNamed(context, '/setup_profile_personal');
+        break;
+      case 'SOS Emergency':
+        Navigator.pushNamed(context, '/sos_emergency');
+        break;
     }
     _searchController.clear();
-    _filteredFeatures = [];
+    _filteredFeatures = _features;
   }
 
-  @override
-  void dispose() {
-    _animationController.dispose();
-    _searchController.dispose();
-    super.dispose();
+  // Helper methods for crowd level
+  Color _getCrowdLevelColor() {
+    switch (_crowdLevel) {
+      case 'Low':
+        return Colors.green;
+      case 'Medium':
+        return Colors.orange;
+      case 'High':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getCrowdLevelIcon() {
+    switch (_crowdLevel) {
+      case 'Low':
+        return Icons.people_outline;
+      case 'Medium':
+        return Icons.people;
+      case 'High':
+        return Icons.people_alt;
+      default:
+        return Icons.people_outline;
+    }
   }
 
   @override
@@ -435,11 +466,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       const SizedBox(width: 12),
                       GestureDetector(
                         onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const SosEmergencyScreen()),
-                          );
+                          Navigator.pushNamed(context, '/sos_emergency');
                         },
                         child: Container(
                           padding: const EdgeInsets.all(8),
@@ -542,7 +569,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                   const SizedBox(height: 24),
 
-                  // Active Route card (only show if there's an active route)
+                  // Active Route card
                   if (_driverStats['activeRoute'] != null)
                     Container(
                       decoration: BoxDecoration(
@@ -560,8 +587,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                           width: 1,
                         ),
                       ),
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -584,7 +611,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                                         style: theme.textTheme.labelMedium
                                             ?.copyWith(color: theme.hintColor)),
                                     const SizedBox(height: 2),
-                                    Text(_driverStats['activeRoute']['name'] ?? 'Route 42',
+                                    Text(
+                                        _driverStats['activeRoute']['name'] ??
+                                            'Route 42',
                                         style: theme.textTheme.titleMedium
                                             ?.copyWith(
                                                 fontWeight: FontWeight.w700)),
@@ -598,7 +627,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                                       style: theme.textTheme.labelMedium
                                           ?.copyWith(color: theme.hintColor)),
                                   const SizedBox(height: 2),
-                                  Text(_driverStats['activeRoute']['nextStop'] ?? 'Central Station',
+                                  Text(
+                                      _driverStats['activeRoute']['nextStop'] ??
+                                          'Central Station',
                                       style: theme.textTheme.bodyMedium
                                           ?.copyWith(
                                               fontWeight: FontWeight.w600)),
@@ -634,20 +665,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                   const SizedBox(height: 20),
 
-                  // ADD: Crowd Level Toggle Section
-                  const SizedBox(height: 16),
+                  // Crowd Level Toggle Section
                   Row(
                     children: [
                       Icon(_getCrowdLevelIcon(),
-                          size: 16,
-                          color: _getCrowdLevelColor()),
+                          size: 16, color: _getCrowdLevelColor()),
                       const SizedBox(width: 6),
                       Text('Crowd Level',
                           style: theme.textTheme.labelSmall
                               ?.copyWith(color: theme.hintColor)),
                       const Spacer(),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 2),
                         decoration: BoxDecoration(
                           color: _getCrowdLevelColor().withOpacity(0.1),
                           borderRadius: BorderRadius.circular(16),
@@ -662,28 +692,26 @@ class _DashboardScreenState extends State<DashboardScreen>
                             final isSelected = level == _crowdLevel;
                             return GestureDetector(
                               onTap: () {
-                                setState(() {
-                                  _crowdLevel = level;
-                                });
+                                setState(() => _crowdLevel = level);
                               },
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: isSelected 
-                                      ? _getCrowdLevelColor() 
+                                  color: isSelected
+                                      ? _getCrowdLevelColor()
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
                                   level,
                                   style: theme.textTheme.labelSmall?.copyWith(
-                                    color: isSelected 
-                                        ? Colors.white 
+                                    color: isSelected
+                                        ? Colors.white
                                         : _getCrowdLevelColor(),
-                                    fontWeight: isSelected 
-                                        ? FontWeight.w600 
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
                                         : FontWeight.normal,
                                   ),
                                 ),
@@ -696,11 +724,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                   const SizedBox(height: 20),
 
+                  // Stats
                   Row(
                     children: [
                       Expanded(
-                        child: _buildStatCard('Today\'s Hours', _driverStats['todayHours'],
-                            Colors.green, Icons.access_time),
+                        child: _buildStatCard('Today\'s Hours',
+                            _driverStats['todayHours'], Colors.green, Icons.access_time),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -717,8 +746,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                       const Spacer(),
                       Expanded(
                         flex: 2,
-                        child: _buildStatCard('Earnings', _driverStats['earnings'], Colors.purple,
-                            Icons.account_balance_wallet),
+                        child: _buildStatCard('Earnings', _driverStats['earnings'],
+                            Colors.purple, Icons.account_balance_wallet),
                       ),
                       const Spacer(),
                     ],
@@ -757,8 +786,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     : theme.colorScheme.surface,
                                 Icons.navigation,
                                 _startTrip,
-                                onHover: (h) =>
-                                    _setHoverState('Start Trip', h),
+                                onHover: (h) => _setHoverState('Start Trip', h),
                                 isHovered: _hoverStates['Start Trip']!,
                               ),
                             ),
@@ -770,14 +798,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     ? theme.colorScheme.primary
                                     : theme.colorScheme.surface,
                                 Icons.headset_mic_outlined,
-                                () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const SupportCenterScreen()),
-                                  );
-                                },
+                                () => Navigator.pushNamed(context, '/support_center'),
                                 onHover: (h) => _setHoverState('Support', h),
                                 isHovered: _hoverStates['Support']!,
                               ),
@@ -789,22 +810,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                           children: [
                             Expanded(
                               child: _buildQuickActionButton(
-                                'Schedule', // Changed from 'Trip History' to 'Schedule'
-                                _hoverStates['Schedule']! // Updated key
+                                'Schedule',
+                                _hoverStates['Schedule']!
                                     ? theme.colorScheme.primary
                                     : theme.colorScheme.surface,
-                                Icons.schedule, // Changed icon from description_outlined to schedule
-                                () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const BusScheduleScreen()), // Updated navigation
-                                  );
-                                },
-                                onHover: (h) =>
-                                    _setHoverState('Schedule', h), // Updated key
-                                isHovered: _hoverStates['Schedule']!, // Updated key
+                                Icons.schedule,
+                                () => Navigator.pushNamed(context, '/bus_schedule'),
+                                onHover: (h) => _setHoverState('Schedule', h),
+                                isHovered: _hoverStates['Schedule']!,
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -815,18 +828,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     ? theme.colorScheme.primary
                                     : theme.colorScheme.surface,
                                 Icons.settings,
-                                () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const SettingsScreen()),
-                                  );
-                                },
-                                onHover: (h) =>
-                                    _setHoverState('Journey Planner', h),
-                                isHovered:
-                                    _hoverStates['Journey Planner']!,
+                                () => Navigator.pushNamed(context, '/settings'),
+                                onHover: (h) => _setHoverState('Journey Planner', h),
+                                isHovered: _hoverStates['Journey Planner']!,
                               ),
                             ),
                           ],
@@ -847,8 +851,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                     child: Column(
                       children: [
-                        const Icon(Icons.bug_report,
-                            color: Colors.amber, size: 24),
+                        const Icon(Icons.bug_report, color: Colors.amber, size: 24),
                         const SizedBox(height: 8),
                         Text('Testing Mode',
                             style: theme.textTheme.titleSmall
@@ -856,11 +859,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         const SizedBox(height: 8),
                         ElevatedButton(
                           onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const JourneyPlannerScreen()),
-                            );
+                            Navigator.pushNamed(context, '/journey_planner');
                           },
                           child: const Text('Go to Journey Planner'),
                         ),
@@ -930,15 +929,10 @@ class _DashboardScreenState extends State<DashboardScreen>
               heroTag: 'sos_fab',
               backgroundColor: Colors.red,
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const SosEmergencyScreen()),
-                );
+                Navigator.pushNamed(context, '/sos_emergency');
                 setState(() => _isFabExpanded = false);
               },
-              child:
-                  const Icon(Icons.emergency_outlined, color: Colors.white),
+              child: const Icon(Icons.emergency_outlined, color: Colors.white),
             ),
           ),
         if (_isFabExpanded)
@@ -948,11 +942,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               heroTag: 'location_fab',
               backgroundColor: Colors.green,
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const JourneyPlannerScreen()),
-                );
+                Navigator.pushNamed(context, '/journey_planner');
                 setState(() => _isFabExpanded = false);
               },
               child: const Icon(Icons.location_on, color: Colors.white),
@@ -966,8 +956,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             onPressed: () {
               setState(() => _isFabExpanded = !_isFabExpanded);
             },
-            child:
-                Icon(Icons.menu, color: theme.colorScheme.primary, size: 32),
+            child: Icon(Icons.menu, color: theme.colorScheme.primary, size: 32),
           ),
         ),
       ],
@@ -1091,8 +1080,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     ];
   }
 
-  Widget _buildStatCard(
-      String title, String value, Color color, IconData icon) {
+  Widget _buildStatCard(String title, String value, Color color, IconData icon) {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1122,8 +1110,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           ]),
           const SizedBox(height: 12),
           Text(title,
-              style:
-                  theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
           const SizedBox(height: 4),
           Text(value,
               style: theme.textTheme.titleMedium

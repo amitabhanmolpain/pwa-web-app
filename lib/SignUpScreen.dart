@@ -65,24 +65,44 @@ class _SignUpScreenState extends State<SignUpScreen> {
             'name': _nameController.text.trim(),
             'email': _emailController.text.trim(),
             'password': _passwordController.text.trim(),
-            'phoneNumber': _phoneController.text.trim(),
+            'phone': _phoneController.text.trim(),
             'role': 'DRIVER', // Assuming driver role for this app
           }),
         );
 
-        if (response.statusCode == 201) {
+        // Debug print to see what status code is returned
+        print('Response status code: ${response.statusCode}');
+        print('Response body: ${response.body}');
+
+        // Check for successful registration - include common success status codes
+        if (response.statusCode == 200 || response.statusCode == 201) {
           // Registration successful
-          final Map<String, dynamic> responseData = json.decode(response.body);
+          Map<String, dynamic>? responseData;
+          try {
+            responseData = json.decode(response.body);
+          } catch (e) {
+            // If response body is not JSON, treat as success
+            responseData = {};
+          }
+          
+          // Check if response contains user data (indicating successful registration)
+          String successMessage = 'Account created successfully!';
+          if (responseData != null && responseData.containsKey('user')) {
+            successMessage = 'Account created successfully! Welcome ${responseData['user']['name']}!';
+          } else if (responseData != null && responseData.containsKey('message')) {
+            successMessage = responseData['message'];
+          }
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(responseData['message'] ?? 'Account created successfully!'),
+              content: Text(successMessage),
               backgroundColor: Colors.green,
             ),
           );
           
           // Check if email verification is required
-          if (responseData.containsKey('requiresVerification') && 
+          if (responseData != null && 
+              responseData.containsKey('requiresVerification') && 
               responseData['requiresVerification'] == true) {
             _showVerificationDialog();
           } else {
@@ -91,9 +111,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
           
         } else if (response.statusCode == 400) {
           // Bad request - validation errors
-          final Map<String, dynamic> errorData = json.decode(response.body);
-          final String errorMessage = errorData['message'] ?? 
-                                    errorData['error'] ?? 
+          Map<String, dynamic>? errorData;
+          try {
+            errorData = json.decode(response.body);
+          } catch (e) {
+            errorData = null;
+          }
+          final String errorMessage = errorData?['message'] ?? 
+                                    errorData?['error'] ?? 
                                     'Registration failed. Please check your information.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -110,7 +135,28 @@ class _SignUpScreenState extends State<SignUpScreen> {
             ),
           );
         } else {
-          // Other server errors
+          // Other server errors - but check if it might be successful
+          Map<String, dynamic>? responseData;
+          try {
+            responseData = json.decode(response.body);
+            // If response contains success indicators, treat as success
+            if (responseData != null && 
+                (responseData.containsKey('success') && responseData['success'] == true ||
+                 responseData.containsKey('message') && 
+                 responseData['message'].toString().toLowerCase().contains('success'))) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(responseData['message'] ?? 'Account created successfully!'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+              Navigator.pop(context); // Return to login screen
+              return;
+            }
+          } catch (e) {
+            // Continue to show error
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Registration failed. Please try again later.'),

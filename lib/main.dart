@@ -1,3 +1,4 @@
+import 'package:driver_portal/logger_setup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,7 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'login_screen.dart';
 import 'language_selection_screen.dart';
-import 'dashboard_screen.dart';
+import 'dashboard_screen.dart' hide setupLogging;
 import 'settings_screen.dart';
 import 'setup_profile_personal_screen.dart';
 import 'setup_profile_vehicle_screen.dart';
@@ -31,6 +32,7 @@ Future<void> main() async {
   await storage.delete(key: 'auth_token');
   await storage.delete(key: 'token');
   await storage.delete(key: 'access_token');
+  setupLogging();
   runApp(
     ChangeNotifierProvider(
       create: (context) => ThemeNotifier(),
@@ -51,16 +53,20 @@ class MargDarshakApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: _buildLightTheme(),
           darkTheme: _buildDarkTheme(),
-          themeMode: themeNotifier.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          themeMode:
+              themeNotifier.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           initialRoute: '/login',
           routes: {
             '/login': (context) => const LoginScreen(),
             '/language': (context) => const LanguageSelectionScreen(),
             '/dashboard': (context) => const DashboardScreen(),
             '/settings': (context) => const SettingsScreen(),
-            '/setup_profile_personal': (context) => const SetupProfilePersonalScreen(),
-            '/setup_profile_vehicle': (context) => const SetupProfileVehicleScreen(),
-            '/setup_profile_documents': (context) => const SetupProfileDocumentsScreen(),
+            '/setup_profile_personal': (context) =>
+                const SetupProfilePersonalScreen(),
+            '/setup_profile_vehicle': (context) =>
+                const SetupProfileVehicleScreen(),
+            '/setup_profile_documents': (context) =>
+                const SetupProfileDocumentsScreen(),
             '/sos_emergency': (context) => const SosEmergencyScreen(),
             '/trip_history': (context) => const TripHistoryScreen(),
             '/journey_planner': (context) => const JourneyPlannerScreen(),
@@ -80,7 +86,8 @@ class MargDarshakApp extends StatelessWidget {
       appBarTheme: const AppBarTheme(
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.light, // White icons on status bar
+          statusBarIconBrightness:
+              Brightness.light, // White icons on status bar
           statusBarBrightness: Brightness.dark, // For iOS
         ),
         backgroundColor: Color(0xFF6366F1),
