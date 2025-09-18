@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'setup_profile_documents_screen.dart';
 
 class SetupProfileVehicleScreen extends StatefulWidget {
@@ -21,9 +21,9 @@ class _SetupProfileVehicleScreenState extends State<SetupProfileVehicleScreen> {
   bool _isSaving = false;
 
   // API endpoints
-  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
-  static const String VEHICLE_ENDPOINT = '$BASE_URL/driver/vehicle';
-  static const String VEHICLE_TYPES_ENDPOINT = '$BASE_URL/vehicles/types';
+  static const String BASE_URL = 'http://localhost:8080/api';
+  static const String VEHICLE_ENDPOINT = '$BASE_URL/vehicle';
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   final List<String> fuelTypes = [
     'Petrol',
@@ -54,8 +54,7 @@ class _SetupProfileVehicleScreenState extends State<SetupProfileVehicleScreen> {
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
+      final accessToken = await _secureStorage.read(key: 'access_token');
       
       if (accessToken == null) {
         throw Exception('Not authenticated. Please login again.');
@@ -106,9 +105,8 @@ class _SetupProfileVehicleScreenState extends State<SetupProfileVehicleScreen> {
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
-      final userId = prefs.getString('user_id');
+      final accessToken = await _secureStorage.read(key: 'access_token');
+      final userId = await _secureStorage.read(key: 'user_id');
       
       if (accessToken == null) {
         throw Exception('Not authenticated. Please login again.');
@@ -172,32 +170,7 @@ class _SetupProfileVehicleScreenState extends State<SetupProfileVehicleScreen> {
   }
 
   // Refresh JWT token
-  Future<String?> _refreshToken() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final refreshToken = prefs.getString('refresh_token');
-      
-      if (refreshToken == null) return null;
-
-      final response = await http.post(
-        Uri.parse('$BASE_URL/auth/refresh'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $refreshToken',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        final newAccessToken = responseData['accessToken'];
-        await prefs.setString('access_token', newAccessToken);
-        return newAccessToken;
-      }
-    } catch (e) {
-      print('Token refresh failed: $e');
-    }
-    return null;
-  }
+  Future<String?> _refreshToken() async => null;
 
   // Validation methods
   String? _validateVehicleNumber(String? value) {

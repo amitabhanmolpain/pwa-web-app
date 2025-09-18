@@ -66,7 +66,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // API endpoints
   static const String BASE_URL = String.fromEnvironment('BASE_URL',
-      defaultValue: 'http://your-spring-boot-server:8080/api');
+      defaultValue: 'http://localhost:8080/api');
   static const String WS_URL = String.fromEnvironment('WS_URL',
       defaultValue: 'ws://your-server:8080/trip/socket');
   static const String DASHBOARD_STATS_ENDPOINT = '$BASE_URL/driver/stats';

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dashboard_screen.dart';
 
 class SetupProfileDocumentsScreen extends StatefulWidget {
@@ -22,6 +24,11 @@ class _SetupProfileDocumentsScreenState extends State<SetupProfileDocumentsScree
     'vehicleRegistration': null,
     'insuranceCertificate': null,
   };
+  final Map<String, Uint8List?> _selectedDocumentBytes = {
+    'drivingLicense': null,
+    'vehicleRegistration': null,
+    'insuranceCertificate': null,
+  };
   Map<String, String> _documentUrls = {
     'drivingLicense': '',
     'vehicleRegistration': '',
@@ -29,10 +36,11 @@ class _SetupProfileDocumentsScreenState extends State<SetupProfileDocumentsScree
   };
 
   // API endpoints
-  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
-  static const String DOCUMENTS_ENDPOINT = '$BASE_URL/driver/documents';
-  static const String UPLOAD_DOCUMENT_ENDPOINT = '$BASE_URL/driver/documents/upload';
-  static const String COMPLETE_PROFILE_ENDPOINT = '$BASE_URL/driver/profile/complete';
+  static const String BASE_URL = 'http://localhost:8080/api';
+  static const String DOCUMENTS_ENDPOINT = '$BASE_URL/documents';
+  static const String UPLOAD_DOCUMENT_ENDPOINT = '$BASE_URL/documents/upload';
+  static const String COMPLETE_PROFILE_ENDPOINT = '$BASE_URL/documents/complete';
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   @override
   void initState() {
@@ -47,8 +55,7 @@ class _SetupProfileDocumentsScreenState extends State<SetupProfileDocumentsScree
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
+      final accessToken = await _secureStorage.read(key: 'access_token');
       
       if (accessToken == null) {
         throw Exception('Not authenticated. Please login again.');
@@ -100,9 +107,18 @@ class _SetupProfileDocumentsScreenState extends State<SetupProfileDocumentsScree
       );
 
       if (pickedFile != null) {
-        setState(() {
-          _selectedDocuments[documentType] = File(pickedFile.path);
-        });
+        if (kIsWeb) {
+          final bytes = await pickedFile.readAsBytes();
+          setState(() {
+            _selectedDocumentBytes[documentType] = bytes;
+            _selectedDocuments[documentType] = null;
+          });
+        } else {
+          setState(() {
+            _selectedDocuments[documentType] = File(pickedFile.path);
+            _selectedDocumentBytes[documentType] = null;
+          });
+        }
         await _uploadDocument(documentType);
       }
     } catch (e) {
@@ -118,15 +134,15 @@ class _SetupProfileDocumentsScreenState extends State<SetupProfileDocumentsScree
   // Upload document to backend
   Future<void> _uploadDocument(String documentType) async {
     final file = _selectedDocuments[documentType];
-    if (file == null) return;
+    final bytes = _selectedDocumentBytes[documentType];
+    if (file == null && bytes == null) return;
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
+      final accessToken = await _secureStorage.read(key: 'access_token');
       
       if (accessToken == null) {
         throw Exception('Not authenticated. Please login again.');
@@ -142,11 +158,19 @@ class _SetupProfileDocumentsScreenState extends State<SetupProfileDocumentsScree
       request.headers['Authorization'] = 'Bearer $accessToken';
 
       // Add document file
-      request.files.add(await http.MultipartFile.fromPath(
-        'document',
-        file.path,
-        filename: '${documentType}_${DateTime.now().millisecondsSinceEpoch}.jpg',
-      ));
+      if (kIsWeb && bytes != null) {
+        request.files.add(http.MultipartFile.fromBytes(
+          'document',
+          bytes,
+          filename: '${documentType}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        ));
+      } else if (file != null) {
+        request.files.add(await http.MultipartFile.fromPath(
+          'document',
+          file.path,
+          filename: '${documentType}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        ));
+      }
 
       // Add document type
       request.fields['documentType'] = documentType;
@@ -191,8 +215,7 @@ class _SetupProfileDocumentsScreenState extends State<SetupProfileDocumentsScree
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
+      final accessToken = await _secureStorage.read(key: 'access_token');
       
       if (accessToken == null) {
         throw Exception('Not authenticated. Please login again.');
@@ -262,32 +285,7 @@ class _SetupProfileDocumentsScreenState extends State<SetupProfileDocumentsScree
   }
 
   // Refresh JWT token
-  Future<String?> _refreshToken() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final refreshToken = prefs.getString('refresh_token');
-      
-      if (refreshToken == null) return null;
-
-      final response = await http.post(
-        Uri.parse('$BASE_URL/auth/refresh'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $refreshToken',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        final newAccessToken = responseData['accessToken'];
-        await prefs.setString('access_token', newAccessToken);
-        return newAccessToken;
-      }
-    } catch (e) {
-      print('Token refresh failed: $e');
-    }
-    return null;
-  }
+  Future<String?> _refreshToken() async => null;
 
   String _getDocumentName(String documentType) {
     switch (documentType) {

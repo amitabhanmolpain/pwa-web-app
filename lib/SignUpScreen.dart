@@ -206,42 +206,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  // Optional: Function to resend verification email
-  Future<void> _resendVerificationEmail(String email) async {
-    try {
-      final response = await http.post(
-        Uri.parse(VERIFY_EMAIL_ENDPOINT),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({'email': email}),
-      );
-
-      if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Verification email sent successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to send verification email.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(

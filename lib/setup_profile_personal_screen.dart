@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'setup_profile_vehicle_screen.dart';
 
@@ -10,10 +13,12 @@ class SetupProfilePersonalScreen extends StatefulWidget {
   const SetupProfilePersonalScreen({super.key});
 
   @override
-  State<SetupProfilePersonalScreen> createState() => _SetupProfilePersonalScreenState();
+  State<SetupProfilePersonalScreen> createState() =>
+      _SetupProfilePersonalScreenState();
 }
 
-class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen> {
+class _SetupProfilePersonalScreenState
+    extends State<SetupProfilePersonalScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -22,13 +27,15 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
   bool _isLoading = false;
   bool _isSaving = false;
   File? _selectedImage;
+  Uint8List? _selectedImageBytes;
   String? _profilePhotoUrl;
   final ImagePicker _imagePicker = ImagePicker();
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
-  // API endpoints
-  static const String BASE_URL = 'http://your-spring-boot-server:8080/api';
-  static const String PROFILE_ENDPOINT = '$BASE_URL/driver/profile';
-  static const String UPLOAD_PHOTO_ENDPOINT = '$BASE_URL/driver/profile/photo';
+  // API endpoints (replace with your .env values if using dotenv)
+  static const String BASE_URL = 'http://localhost:8080/api';
+  static const String USER_ENDPOINT = '$BASE_URL/user';
+  static const String UPLOAD_PHOTO_ENDPOINT = '$BASE_URL/user/photo';
 
   @override
   void initState() {
@@ -46,53 +53,72 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
   }
 
   // Load existing profile data
-  Future<void> _loadProfileData() async {
-    setState(() {
-      _isLoading = true;
-    });
+Future<void> _loadProfileData() async {
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
-      
-      if (accessToken == null) {
-        throw Exception('Not authenticated. Please login again.');
-      }
+  try {
+    final accessToken = await _secureStorage.read(key: 'access_token');
+    final userId = await _secureStorage.read(key: 'user_id');
 
-      final response = await http.get(
-        Uri.parse(PROFILE_ENDPOINT),
+    if (accessToken == null || userId == null) {
+      throw Exception('Not authenticated. Please login again.');
+    }
+
+    // Try fetch by explicit ID, fallback to authenticated endpoint
+    http.Response response = await http.get(
+      Uri.parse('$USER_ENDPOINT/$userId'),
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+      },
+    );
+
+    // If unauthorized, prompt relogin (no refresh token flow configured here)
+
+    if (response.statusCode == 404 || response.statusCode == 400) {
+      // Fallback to current authenticated user if ID-based fetch fails
+      response = await http.get(
+        Uri.parse(USER_ENDPOINT),
         headers: {
           'Authorization': 'Bearer $accessToken',
         },
       );
-
-      if (response.statusCode == 200) {
-        final profileData = json.decode(response.body);
-        setState(() {
-          _nameController.text = profileData['name'] ?? '';
-          _phoneController.text = profileData['phoneNumber'] ?? '';
-          _emailController.text = profileData['email'] ?? '';
-          _addressController.text = profileData['address'] ?? '';
-          _profilePhotoUrl = profileData['profilePhotoUrl'];
-        });
-      } else if (response.statusCode == 401) {
-        final newToken = await _refreshToken();
-        if (newToken != null) {
-          await _loadProfileData();
-          return;
-        }
-      }
-      // If 404, it means no profile exists yet - that's fine
-
-    } catch (error) {
-      print('Error loading profile: $error');
-      // Silently fail - user can enter new data
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
     }
+
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      final Map<String, dynamic> userData =
+          decoded is Map<String, dynamic> && decoded.containsKey('user')
+              ? Map<String, dynamic>.from(decoded['user'] ?? {})
+              : Map<String, dynamic>.from(decoded ?? {});
+
+      setState(() {
+        _nameController.text = (userData['name'] ?? '').toString();
+        _phoneController.text = (userData['phone'] ?? '').toString();
+        _emailController.text = (userData['email'] ?? '').toString();
+        _addressController.text = (userData['address'] ?? '').toString();
+        _profilePhotoUrl = userData['profileImageUrl'] as String?;
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load profile (${response.statusCode})'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  } catch (error) {
+    print('Error loading profile: $error');
+  } finally {
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
+
+
+
 
   // Pick image from gallery
   Future<void> _pickImageFromGallery() async {
@@ -105,9 +131,18 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
       );
 
       if (pickedFile != null) {
-        setState(() {
-          _selectedImage = File(pickedFile.path);
-        });
+        if (kIsWeb) {
+          final bytes = await pickedFile.readAsBytes();
+          setState(() {
+            _selectedImageBytes = bytes;
+            _selectedImage = null;
+          });
+        } else {
+          setState(() {
+            _selectedImage = File(pickedFile.path);
+            _selectedImageBytes = null;
+          });
+        }
         await _uploadPhoto();
       }
     } catch (e) {
@@ -131,9 +166,18 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
       );
 
       if (pickedFile != null) {
-        setState(() {
-          _selectedImage = File(pickedFile.path);
-        });
+        if (kIsWeb) {
+          final bytes = await pickedFile.readAsBytes();
+          setState(() {
+            _selectedImageBytes = bytes;
+            _selectedImage = null;
+          });
+        } else {
+          setState(() {
+            _selectedImage = File(pickedFile.path);
+            _selectedImageBytes = null;
+          });
+        }
         await _uploadPhoto();
       }
     } catch (e) {
@@ -179,39 +223,43 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
     );
   }
 
-  // Upload profile photo to backend
+  // Upload profile photo
   Future<void> _uploadPhoto() async {
-    if (_selectedImage == null) return;
+    if (_selectedImage == null && _selectedImageBytes == null) return;
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
-      
+      final accessToken = await _secureStorage.read(key: 'access_token');
+
       if (accessToken == null) {
         throw Exception('Not authenticated. Please login again.');
       }
 
-      // Create multipart request
       var request = http.MultipartRequest(
         'POST',
         Uri.parse(UPLOAD_PHOTO_ENDPOINT),
       );
 
-      // Add headers
       request.headers['Authorization'] = 'Bearer $accessToken';
+      request.headers['Accept'] = 'application/json';
 
-      // Add image file
-      request.files.add(await http.MultipartFile.fromPath(
-        'photo',
-        _selectedImage!.path,
-        filename: 'profile_photo.jpg',
-      ));
+      if (_selectedImageBytes != null) {
+        request.files.add(http.MultipartFile.fromBytes(
+          'photo',
+          _selectedImageBytes!,
+          filename: 'profile_photo.jpg',
+        ));
+      } else if (_selectedImage != null) {
+        request.files.add(await http.MultipartFile.fromPath(
+          'photo',
+          _selectedImage!.path,
+          filename: 'profile_photo.jpg',
+        ));
+      }
 
-      // Send request
       final response = await request.send();
       final responseData = await response.stream.bytesToString();
       final jsonResponse = json.decode(responseData);
@@ -220,7 +268,7 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
         setState(() {
           _profilePhotoUrl = jsonResponse['photoUrl'];
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Profile photo updated successfully!'),
@@ -244,7 +292,7 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
     }
   }
 
-  // Save profile data to backend
+  // Save profile
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -255,44 +303,46 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
-      final userId = prefs.getString('user_id');
-      
+      final accessToken = await _secureStorage.read(key: 'access_token');
+      final userId = await _secureStorage.read(key: 'user_id');
+
       if (accessToken == null) {
         throw Exception('Not authenticated. Please login again.');
       }
 
-      final response = await http.post(
-        Uri.parse(PROFILE_ENDPOINT),
+      if (userId == null) {
+        throw Exception('Missing user id.');
+      }
+
+      final response = await http.put(
+        Uri.parse('$USER_ENDPOINT/$userId'),
         headers: {
           'Authorization': 'Bearer $accessToken',
           'Content-Type': 'application/json',
         },
         body: json.encode({
           'name': _nameController.text.trim(),
-          'phoneNumber': _phoneController.text.trim(),
-          'email': _emailController.text.trim(),
+          'phone': _phoneController.text.trim(), // ✅ fixed
           'address': _addressController.text.trim(),
-          'profilePhotoUrl': _profilePhotoUrl,
-          'userId': userId,
+          'profileImageUrl': _profilePhotoUrl,
         }),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = json.decode(response.body);
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(responseData['message'] ?? 'Profile saved successfully!'),
+            content:
+                Text(responseData['message'] ?? 'Profile saved successfully!'),
             backgroundColor: Colors.green,
           ),
         );
 
-        // Navigate to next screen
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const SetupProfileVehicleScreen()),
+          MaterialPageRoute(
+              builder: (context) => const SetupProfileVehicleScreen()),
         );
       } else if (response.statusCode == 401) {
         final newToken = await _refreshToken();
@@ -305,8 +355,8 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
       }
     } catch (error) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error saving profile: Ask Anshul he did not did this '),
+        SnackBar(
+          content: Text('Error saving profile: $error'), // ✅ fixed
           backgroundColor: Colors.red,
         ),
       );
@@ -317,35 +367,10 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
     }
   }
 
-  // Refresh JWT token
-  Future<String?> _refreshToken() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final refreshToken = prefs.getString('refresh_token');
-      
-      if (refreshToken == null) return null;
+  // No refresh token flow set up; require re-login on 401
+  Future<String?> _refreshToken() async => null;
 
-      final response = await http.post(
-        Uri.parse('$BASE_URL/auth/refresh'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $refreshToken',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        final newAccessToken = responseData['accessToken'];
-        await prefs.setString('access_token', newAccessToken);
-        return newAccessToken;
-      }
-    } catch (e) {
-      print('Token refresh failed: $e');
-    }
-    return null;
-  }
-
-  // Validation methods (same as before)
+  // Validation
   String? _validateName(String? value) {
     if (value == null || value.isEmpty) {
       return 'Please enter your name';
@@ -414,9 +439,9 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
                         _buildStep(3, 'Documents', false),
                       ],
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     // Profile Photo Section
                     Center(
                       child: Column(
@@ -429,20 +454,28 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
                                 decoration: BoxDecoration(
                                   color: Colors.grey[200],
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.grey[300]!, width: 2),
-                                  image: _selectedImage != null
+                                  border: Border.all(
+                                      color: Colors.grey[300]!, width: 2),
+                                  image: _selectedImageBytes != null
                                       ? DecorationImage(
-                                          image: FileImage(_selectedImage!),
+                                          image: MemoryImage(_selectedImageBytes!),
                                           fit: BoxFit.cover,
                                         )
+                                      : _selectedImage != null
+                                          ? DecorationImage(
+                                              image: FileImage(_selectedImage!),
+                                              fit: BoxFit.cover,
+                                            )
                                       : _profilePhotoUrl != null
                                           ? DecorationImage(
-                                              image: NetworkImage(_profilePhotoUrl!),
+                                              image: NetworkImage(
+                                                  _profilePhotoUrl!),
                                               fit: BoxFit.cover,
                                             )
                                           : null,
                                 ),
-                                child: _selectedImage == null && _profilePhotoUrl == null
+                                child: _selectedImage == null &&
+                                        _profilePhotoUrl == null
                                     ? const Icon(
                                         Icons.person,
                                         size: 50,
@@ -459,7 +492,9 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
                                     ),
                                     child: const Center(
                                       child: CircularProgressIndicator(
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white),
                                       ),
                                     ),
                                   ),
@@ -468,7 +503,8 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
                           ),
                           const SizedBox(height: 8),
                           TextButton(
-                            onPressed: _isLoading ? null : _showImageSourceDialog,
+                            onPressed:
+                                _isLoading ? null : _showImageSourceDialog,
                             child: const Text(
                               'Change Photo',
                               style: TextStyle(
@@ -480,53 +516,55 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
                         ],
                       ),
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    
-                    // Form Fields with validation
+
+                    // Form Fields
                     _buildFormField(
                       'Full Name',
-                      'Enter your full name',
+                      '',
                       _nameController,
                       validator: _validateName,
                     ),
                     const SizedBox(height: 16),
-                    
+
                     _buildFormField(
                       'Phone Number',
-                      '+91 98765 43210',
+                      '',
                       _phoneController,
                       validator: _validatePhone,
                       keyboardType: TextInputType.phone,
                     ),
                     const SizedBox(height: 16),
-                    
+
                     _buildFormField(
                       'Email',
-                      'driver@example.com',
+                      '',
                       _emailController,
                       validator: _validateEmail,
                       keyboardType: TextInputType.emailAddress,
                     ),
                     const SizedBox(height: 16),
-                    
+
                     _buildFormField(
                       'Address',
-                      'Enter your address',
+                      '',
                       _addressController,
                       validator: _validateAddress,
                       maxLines: 3,
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Navigation Buttons
                     Row(
                       children: [
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: _isSaving ? null : () {
-                              Navigator.pop(context);
-                            },
+                            onPressed: _isSaving
+                                ? null
+                                : () {
+                                    Navigator.pop(context);
+                                  },
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
@@ -553,7 +591,8 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
                                     width: 20,
                                     height: 20,
                                     child: CircularProgressIndicator(
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
                                       strokeWidth: 2,
                                     ),
                                   )
@@ -640,7 +679,8 @@ class _SetupProfilePersonalScreenState extends State<SetupProfilePersonalScreen>
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: Colors.red),
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
         ),
       ],
