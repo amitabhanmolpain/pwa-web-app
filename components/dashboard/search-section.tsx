@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, MapPin, Clock, Users, Navigation, Bus, ArrowRight, Loader2 } from "lucide-react"
+import { subscribeToLocationSocket, subscribeToLocationUpdates } from "@/lib/api/tracking"
 
 type BusCategory = "intercity" | "city" | "village" | "all";
 
@@ -36,6 +37,7 @@ export function SearchSection({ onSearch, onTrackBus, searchData }: SearchSectio
   const [womenMode, setWomenMode] = useState(false)
   const [busType, setBusType] = useState<BusCategory>(searchData?.busType as BusCategory || "all")
   const [searchResults, setSearchResults] = useState<Bus[]>([])
+  const [liveLocations, setLiveLocations] = useState<Record<string, { latitude: number; longitude: number; station?: string }>>({})
   const [hasSearched, setHasSearched] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -90,6 +92,50 @@ export function SearchSection({ onSearch, onTrackBus, searchData }: SearchSectio
     })
     onTrackBus?.(bus)
   }
+
+  // Subscribe to live locations when search results change. For each bus, try socket subscription
+  useEffect(() => {
+    if (!searchResults || searchResults.length === 0) return
+
+    const cleanups: Array<() => void> = []
+
+    searchResults.forEach((bus) => {
+      const params = { busId: bus.id }
+
+      // Try socket subscription first
+      const cleanupSocket = subscribeToLocationSocket(
+        params,
+        (location) => {
+          setLiveLocations((prev) => ({
+            ...prev,
+            [bus.id]: { latitude: location.latitude, longitude: location.longitude, station: location.currentLocation }
+          }))
+        },
+        (err) => {
+          // If socket fails, fall back to polling subscription
+          const pollCleanup = subscribeToLocationUpdates(
+            params,
+            (location) => {
+              setLiveLocations((prev) => ({
+                ...prev,
+                [bus.id]: { latitude: location.latitude, longitude: location.longitude, station: location.currentLocation }
+              }))
+            },
+            (err) => {
+              console.error('Location subscription error for bus', bus.id, err)
+            }
+          )
+          cleanups.push(pollCleanup)
+        }
+      )
+
+      cleanups.push(cleanupSocket)
+    })
+
+    return () => {
+      cleanups.forEach((fn) => fn())
+    }
+  }, [searchResults])
 
   const getBusTypeColor = (type: string) => {
     switch (type) {
@@ -296,6 +342,20 @@ export function SearchSection({ onSearch, onTrackBus, searchData }: SearchSectio
                           <div className="text-pink-600 font-medium text-sm">👩 {bus.womenSeats} seats</div>
                         )}
                       </div>
+
+                      {/* Live location preview (if available) */}
+                      {liveLocations[bus.id] && (
+                        <div className="mt-3 text-sm text-gray-700">
+                          <div className="flex items-center gap-3">
+                            <span className="font-medium">Live:</span>
+                            <span>Lat: {liveLocations[bus.id].latitude.toFixed(5)}</span>
+                            <span>Lng: {liveLocations[bus.id].longitude.toFixed(5)}</span>
+                            {liveLocations[bus.id].station && (
+                              <span className="text-gray-500">• {liveLocations[bus.id].station}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       <Button
                         onClick={() => handleTrackBus(bus)}

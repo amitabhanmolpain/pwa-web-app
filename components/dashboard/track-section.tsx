@@ -17,6 +17,7 @@ import {
   getDriverLocation,
   getBusStatus,
   subscribeToLocationUpdates,
+  subscribeToLocationSocket,
   TrackingParams
 } from "@/lib/api/tracking"
 
@@ -78,33 +79,57 @@ export function TrackSection({ busData }: TrackSectionProps) {
             route: busData.route
           };
 
-          cleanup = subscribeToLocationUpdates(
-            trackingParams,
-            (location: DriverLocation) => {
-              setBusLocation({ lat: location.latitude, lng: location.longitude });
-              setCurrentSpeed(location.speed);
-              
-              // Update bus status based on location
-              if (location.nextStop === userLocationName && !busAtUserLocation) {
-                setBusStatus('approaching');
-                sendBusApproachingNotification(busData.route, userLocationName, 5);
-              } else if (location.currentLocation === userLocationName && !journeyStarted) {
-                setBusStatus('arrived');
-                setBusAtUserLocation(true);
-                sendBusArrivalNotification(busData.route, userLocationName);
-              } else if (journeyStarted) {
-                setBusStatus('departed');
+          // Try socket subscription first, with polling fallback
+          try {
+            cleanup = subscribeToLocationSocket(
+              trackingParams,
+              (location: DriverLocation) => {
+                setBusLocation({ lat: location.latitude, lng: location.longitude });
+                setCurrentSpeed(location.speed);
+
+                if (location.nextStop === userLocationName && !busAtUserLocation) {
+                  setBusStatus('approaching');
+                  sendBusApproachingNotification(busData.route, userLocationName, 5);
+                } else if (location.currentLocation === userLocationName && !journeyStarted) {
+                  setBusStatus('arrived');
+                  setBusAtUserLocation(true);
+                  sendBusArrivalNotification(busData.route, userLocationName);
+                } else if (journeyStarted) {
+                  setBusStatus('departed');
+                }
+              },
+              (error: Error) => {
+                console.warn('Socket subscription failed, falling back to polling:', error);
+                // fallback to polling
+                const poll = subscribeToLocationUpdates(
+                  trackingParams,
+                  (location: DriverLocation) => {
+                    setBusLocation({ lat: location.latitude, lng: location.longitude });
+                    setCurrentSpeed(location.speed);
+                  },
+                  (err) => {
+                    console.error('Polling subscription error:', err);
+                  }
+                )
+                // ensure cleanup calls the polling cleanup as well
+                cleanup = () => {
+                  try { poll(); } catch (e) {}
+                }
               }
-            },
-            (error: Error) => {
-              console.error('Tracking error:', error);
-              toast({
-                title: "Tracking Error",
-                description: "Unable to get real-time bus location. Retrying...",
-                variant: "destructive",
-              });
-            }
-          );
+            )
+          } catch (err) {
+            // If subscribeToLocationSocket throws synchronously, fallback to polling
+            cleanup = subscribeToLocationUpdates(
+              trackingParams,
+              (location: DriverLocation) => {
+                setBusLocation({ lat: location.latitude, lng: location.longitude });
+                setCurrentSpeed(location.speed);
+              },
+              (error: Error) => {
+                console.error('Tracking error:', error);
+              }
+            )
+          }
         },
         (error) => {
           console.error("Error getting location:", error);
